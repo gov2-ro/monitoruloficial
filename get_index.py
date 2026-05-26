@@ -1,7 +1,9 @@
-import requests, json, sys, os, time, sqlite3,random, argparse, logging
+import requests, json, sys, os, time, sqlite3,random, argparse, logging, urllib3
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from tqdm import tqdm
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 sys.path.append("../utils/")
 from common import generate_dates, base_headers
 
@@ -88,9 +90,10 @@ for oneday in tqdm(zidates):
     data = {'today': oneday, 'rand': random.random() }
 
     try:
-        response = requests.post(url, headers=base_headers('headers1'), data=data)
+        response = requests.post(url, headers=base_headers('headers1'), data=data, verify=False)
     except Exception as e:
-        logger.error('eRrx: '+ str(e))
+        tqdm.write('eRrx: '+ str(e))
+        continue
     soup = BeautifulSoup(response.content, 'html.parser')
     json_data = {}
     for div in soup.find_all('div', class_='card-body'):

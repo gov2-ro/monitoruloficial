@@ -1,5 +1,7 @@
 import sqlite3, json, requests, sys, os, time, random, re, random, json, argparse
-import logging
+import logging, urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from tqdm import tqdm
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
@@ -113,7 +115,7 @@ for row in tqdm(rows, desc='days'):
 
                
             try:
-                response = requests.get(url_base + url, headers=base_headers('headers2'))
+                response = requests.get(url_base + url, headers=base_headers('headers2'), verify=False)
             except Exception as e:
                 logging.error(f'Error processing URL {url_base + url}: {e}')
                 continue
@@ -142,9 +144,10 @@ for row in tqdm(rows, desc='days'):
             data = {'fid': fid_value, 'rand': random.random() }
             
             try:
-                response = requests.post(transit_url, headers=base_headers('headers1'), data=data)
+                response = requests.post(transit_url, headers=base_headers('headers1'), data=data, verify=False)
             except Exception as e:
-                logger.error('eRrx: '+ str(e))
+                logging.error('eRrx: '+ str(e))
+                continue
             
             gidf_json = json.loads(response.text)
             title = gidf_json['t']
@@ -162,7 +165,7 @@ for row in tqdm(rows, desc='days'):
                 continue #if overwrite = False and file exists, continue
 
             try:
-                response = requests.get(ziurl_jsonp, headers=base_headers('headers2'))
+                response = requests.get(ziurl_jsonp, headers=base_headers('headers2'), verify=False)
             except Exception as e:
                 logging.error(f'Error processing URL {ziurl_jsonp}: {e}')
             
@@ -183,7 +186,7 @@ for row in tqdm(rows, desc='days'):
                         continue #if overwrite = False and file exists, continue
 
                 try:
-                    response = requests.get(ziurl, headers=base_headers('headers2'))
+                    response = requests.get(ziurl, headers=base_headers('headers2'), verify=False)
                 except Exception as e:
                     logging.error(f'Error processing URL {url}: {e}')
                 

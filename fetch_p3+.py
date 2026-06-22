@@ -2,6 +2,8 @@ import sqlite3, json, requests, sys, os, time, random, re, random, json, argpars
 import logging, urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from tqdm import tqdm
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
@@ -30,7 +32,33 @@ transit_url     =   'https://monitoruloficial.ro/ramo_customs/emonitor/gidf.php'
 start_date      =   datetime.today() - timedelta(days=10)
 end_date        =   datetime.today()
 daysago         =   10
-#  - - - - - - - - - - - - - - - - - - - - -  
+timeout         =   30      # seconds per request
+pace            =   (1.5, 3.0)   # random sleep (min, max) seconds before every request
+pace_page       =   (0.6, 1.2)   # gentler pace between same-document page PDFs
+#  - - - - - - - - - - - - - - - - - - - - -
+
+# Session with a SINGLE retry on connection errors. The server IP-bans / RST-resets
+# aggressive clients, so a retry burst keeps the ban hot — fail fast and rely on the
+# per-request pacing below to stay under the rate limit.
+def make_session():
+    s = requests.Session()
+    retry = Retry(
+        total=1, connect=1, read=1,
+        backoff_factor=2,                   # one ~2s pause before the single retry
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset(['GET', 'POST']),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    s.mount('https://', adapter)
+    s.mount('http://', adapter)
+    return s
+
+session = make_session()
+
+def be_polite(bounds=pace):
+    """Random delay before a request to stay under the server's rate limit."""
+    time.sleep(random.uniform(*bounds))
 
 parser = argparse.ArgumentParser(description='looks for dates and return lists of parti MO')
 parser.add_argument('-start', '--start_date', help='start date')
@@ -68,6 +96,8 @@ tqdm.write(' > ' + str(nrows) + ' days in the db')
 all_files = 0
 files_found = new_files_found = 0
 prev_year = 1000
+consecutive_failures = 0
+max_consecutive_failures = 2
 
 for row in tqdm(rows, desc='days'):
 # Iterate over the rows and convert the JSON string to a dictionary
@@ -114,10 +144,17 @@ for row in tqdm(rows, desc='days'):
                 continue #if overwrite = False and file exists, continue
 
                
+            be_polite()
             try:
-                response = requests.get(url_base + url, headers=base_headers('headers2'), verify=False)
+                response = session.get(url_base + url, headers=base_headers('headers2'), verify=False, timeout=timeout)
+                consecutive_failures = 0
             except Exception as e:
                 logging.error(f'Error processing URL {url_base + url}: {e}')
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    tqdm.write(f'Stopping: {consecutive_failures} consecutive failures.')
+                    conn.close()
+                    raise SystemExit(1)
                 continue
 
             # get fid value
@@ -143,16 +180,30 @@ for row in tqdm(rows, desc='days'):
             # now request gidf.php to find out the number of pages
             data = {'fid': fid_value, 'rand': random.random() }
             
+            be_polite()
             try:
-                response = requests.post(transit_url, headers=base_headers('headers1'), data=data, verify=False)
+                response = session.post(transit_url, headers=base_headers('headers1'), data=data, verify=False, timeout=timeout)
+                consecutive_failures = 0
             except Exception as e:
                 logging.error('eRrx: '+ str(e))
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    tqdm.write(f'Stopping: {consecutive_failures} consecutive failures.')
+                    conn.close()
+                    raise SystemExit(1)
                 continue
-            
-            gidf_json = json.loads(response.text)
-            title = gidf_json['t']
-            page_count = gidf_json['p']
-            folder = gidf_json['f']
+
+            # Server sometimes returns HTTP 200 with an empty/HTML body under load.
+            # Guard the parse so a single bad response skips this item instead of
+            # killing the whole run with an unhandled JSONDecodeError/KeyError.
+            try:
+                gidf_json = json.loads(response.text)
+                title = gidf_json['t']
+                page_count = gidf_json['p']
+                folder = gidf_json['f']
+            except (json.JSONDecodeError, KeyError) as e:
+                logging.error(f'Bad gidf response for {url_base + url} (fid={fid_value}): {e}; body[:120]={response.text[:120]!r}')
+                continue
             ziurl_jsonp = f"https://monitoruloficial.ro/ramo_customs/emonitor/showmo/services/view.php?doc={gidf_json['d']}&format=jsonp&subfolder={gidf_json['f']}&page=10"
             
             if not os.path.isdir(tmp_folder + date ):
@@ -164,11 +215,13 @@ for row in tqdm(rows, desc='days'):
                 tqdm.write('skipping ' + date + '/' + filename + '.json');
                 continue #if overwrite = False and file exists, continue
 
+            be_polite()
             try:
-                response = requests.get(ziurl_jsonp, headers=base_headers('headers2'), verify=False)
+                response = session.get(ziurl_jsonp, headers=base_headers('headers2'), verify=False, timeout=timeout)
             except Exception as e:
                 logging.error(f'Error processing URL {ziurl_jsonp}: {e}')
-            
+                continue   # don't fall through and write the previous response's body
+
             try:
                 with open(tmp_folder + date + '/' + filename + '/' + filename + '.json', 'wb') as f:
                     f.write(response.content) 
@@ -185,11 +238,13 @@ for row in tqdm(rows, desc='days'):
                         tqdm.write('skipping ' + date + '/' + filename + '.pdf');
                         continue #if overwrite = False and file exists, continue
 
+                be_polite(pace_page)
                 try:
-                    response = requests.get(ziurl, headers=base_headers('headers2'), verify=False)
+                    response = session.get(ziurl, headers=base_headers('headers2'), verify=False, timeout=timeout)
                 except Exception as e:
                     logging.error(f'Error processing URL {url}: {e}')
-                
+                    continue   # skip this page rather than writing a stale/garbage PDF
+
                 try:
                     # with open(output_folder + date + '.pdf', 'wb') as f:
                     with open(tmp_folder + date + '/'  + filename + '/' + str(i) + '.pdf', 'wb') as f:

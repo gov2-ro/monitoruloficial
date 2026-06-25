@@ -32,12 +32,11 @@ see also [pdf2text](../pdf2text) conversion tests
 
 ## Proiecte similare
 
-[monitoruljuridic.ro](http://www.monitoruljuridic.ro/) | [lege-online.ro/monitoare-oficiale](https://www.lege-online.ro/monitoare-oficiale) | [lege5.ro/App/MonitorOficial](https://lege5.ro/App/MonitorOficial) | [ro-lex.ro](https://www.ro-lex.ro/)    
-
 
 | proiect | obs | price |
 |-----|-----|-----|
 | [monitoruljuridic.ro](http://www.monitoruljuridic.ro/) | no formatting | gratis |
+| [ro-lex.ro](https://www.ro-lex.ro/) |  | gratis |
 | [lege-online.ro](https://www.lege-online.ro/monitoare-oficiale) |  |  |
 | [lege5.ro](https://lege5.ro/App/MonitorOficial) | formatted, linked | paid |
 | [idrept.ro](https://lege5.ro/App/MonitorOficial) | formatted, linked | paid |

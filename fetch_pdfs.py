@@ -1,7 +1,7 @@
 """ 
 default script worked but waits forever for large pdf, this shows pbar per each file
 """
-rootFolder = '../../data/mo/'
+rootFolder = 'data/'
 db_filename = rootFolder + 'mo.db'
 table_name = 'dates_lists'
 output_folder = rootFolder + 'pdfs/'

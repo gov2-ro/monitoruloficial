@@ -18,10 +18,10 @@ check if exists, mode overwrite, mode update
 TODO: split by dates
  """
 
-db_filename     =   '../../data/mo/mo.db'
+db_filename     =   'data/mo.db'
 table_name      =   'dates_lists'
-output_folder   =   '../../data/mo/pdfs/_p3+/'
-tmp_folder   =   '../../data/mo/pdfs/_p3+/tmp/'
+output_folder   =   'data/pdfs/_p3+/'
+tmp_folder      =   'data/pdfs/_p3+/tmp/'
 verbose         =   False
 overwrite       =   False   # if false check if file exists, don't fetch again
 pause_at        =   30      # days

@@ -25,9 +25,9 @@ check if files / rows already save, overwrite
 
  """
 
-db_filename    =  '../../data/mo/mo.db'
+db_filename    =  'data/mo.db'
 table_name     =  'dates_lists'
-cache_dir      =  '../../data/mo/html_cache/'
+cache_dir      =  'data/html_cache/'
 start_date     =  datetime.today() - timedelta(days=15)
 end_date       =  datetime.today() 
 save_to_cache  =  True

@@ -154,7 +154,7 @@ def convert_one(pdf_path: Path, overwrite: bool, dry_run: bool) -> tuple[str, bo
 
     meta = parse_filename(pdf_path)
     if meta is None:
-        logging.warning(f'Cannot parse filename: {pdf_path.name} — skipping')
+        tqdm.write(f'WARN: Cannot parse filename: {pdf_path.name} — skipping')
         return ('skipped', False)
 
     if dry_run:
@@ -167,7 +167,7 @@ def convert_one(pdf_path: Path, overwrite: bool, dry_run: bool) -> tuple[str, bo
             timeout=300,
         )
         if result.returncode != 0:
-            logging.warning(f'pdftotext failed ({result.returncode}): {pdf_path.name}')
+            tqdm.write(f'WARN: pdftotext failed ({result.returncode}): {pdf_path.name}')
             return ('failed', False)
 
         raw = result.stdout.decode('utf-8', errors='replace')
@@ -178,12 +178,12 @@ def convert_one(pdf_path: Path, overwrite: bool, dry_run: bool) -> tuple[str, bo
         return ('converted', True)
 
     except subprocess.TimeoutExpired:
-        logging.error(f'Timeout (300s): {pdf_path.name}')
+        tqdm.write(f'ERROR: Timeout (300s): {pdf_path.name}')
         if md_path.exists():
             md_path.unlink()
         return ('failed', False)
     except Exception as e:
-        logging.error(f'Error converting {pdf_path.name}: {e}')
+        tqdm.write(f'ERROR: {pdf_path.name}: {e}')
         if md_path.exists():
             md_path.unlink()
         return ('failed', False)

@@ -21,6 +21,7 @@ Usage (from repo root):
 import argparse
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -81,11 +82,23 @@ def concat_doc(page_paths: list[Path], output_path: Path, dry_run: bool) -> bool
         return False
 
 
+def _raw_dest(doc_dir: Path, root: Path) -> Path:
+    """Return the _raw mirror path for doc_dir.
+
+    data/PIII/2025/2025-01-03/Monitorul-...  →  data/PIII_raw/2025/2025-01-03/Monitorul-...
+    """
+    rel = doc_dir.relative_to(root)
+    part = rel.parts[0]
+    return root / (part + '_raw') / Path(*rel.parts[1:])
+
+
 def find_doc_dirs(root: Path):
     """Yield all doc directories that contain a .done marker."""
     # Structure: <root>/<Px>/<year>/<date>/<docname>/
     for part_dir in sorted(root.iterdir()):
         if not part_dir.is_dir() or part_dir.name.startswith('.'):
+            continue
+        if part_dir.name.endswith('_raw'):
             continue
         for year_dir in sorted(part_dir.iterdir()):
             if not year_dir.is_dir():
@@ -128,6 +141,10 @@ def main():
         if page_count is None:
             logging.warning(f'Unreadable .done in {doc_dir} — skipping')
             continue
+        if page_count == 0:
+            logging.warning(f'{doc_dir.name}: .done says 0 pages — run toolbench/backfill_done.py first')
+            failed += 1
+            continue
 
         # Output is one level up from the doc dir, same name + .pdf
         output_path = doc_dir.parent / (doc_dir.name + '.pdf')
@@ -155,6 +172,14 @@ def main():
 
         if concat_doc(page_paths, output_path, dry_run=args.dry_run):
             merged += 1
+            if not args.dry_run:
+                raw_dest = _raw_dest(doc_dir, root)
+                try:
+                    raw_dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(doc_dir), str(raw_dest))
+                    logging.debug(f'Moved source → {raw_dest}')
+                except Exception as e:
+                    logging.warning(f'Move to _raw failed for {doc_dir.name}: {e}')
         else:
             failed += 1
 

@@ -1,130 +1,129 @@
-import requests, json, sys, os, time, sqlite3,random, argparse, logging, urllib3
+import json, sys, os, time, sqlite3, random, argparse, logging, urllib3
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 sys.path.append("utils/")
-from common import generate_dates, base_headers
+from common import (
+    generate_dates, base_headers, parse_date, make_session,
+    setup_logging, DB_PATH, HTML_CACHE, TABLE_NAME, URL_GET_MO,
+)
 
 
-""" 
-generate dates starting from 2000-01-04 (cu/fara weekends?)
-scrape
+def main():
+    parser = argparse.ArgumentParser(description='Fetch daily MO index → SQLite + HTML cache')
+    parser.add_argument('-start', '--start_date', help='start date YYYY-MM-DD (default: 15 days ago)')
+    parser.add_argument('-end',   '--end_date',   help='end date YYYY-MM-DD (default: today)')
+    parser.add_argument('--overwrite', action=argparse.BooleanOptionalAction, default=False,
+                        help='overwrite existing DB rows (--no-overwrite to skip, default)')
+    parser.add_argument('-m', '--mode',
+                        help='l-<x>: last x days; all: from 2000-01-04 to today')
+    parser.add_argument('--debug', action='store_true', help='verbose debug logging')
+    args = parser.parse_args()
 
-[div#contentem div#showmo]
-//*[@id="showmo"]
+    setup_logging(args.debug)
 
-foreach [div.card-body]
-    [ol li a].text → text sectiune
-    > a → href + nr
+    start_dt = parse_date(args.start_date) if args.start_date else datetime.today() - timedelta(days=15)
+    end_dt   = parse_date(args.end_date)   if args.end_date   else datetime.today()
 
-save cache htmls
-record to SQLite
-check if files / rows already save, overwrite
+    if args.mode:
+        if args.mode == 'all':
+            start_dt = datetime(2000, 1, 4)
+            end_dt   = datetime.today()
+        elif args.mode.startswith('l-'):
+            try:
+                days     = int(args.mode[2:])
+                end_dt   = datetime.today()
+                start_dt = end_dt - timedelta(days=days)
+            except ValueError:
+                logging.error(f'Invalid mode {args.mode!r}. Use l-<number> or all.')
+                raise SystemExit(1)
+        else:
+            logging.error(f'Unknown mode {args.mode!r}. Use l-<number> or all.')
+            raise SystemExit(1)
 
- """
+    overwrite     = args.overwrite
+    save_to_cache = True
+    save_to_db    = True
+    pause_at      = 31   # days between longer pauses
+    pause         = 7    # seconds
 
-db_filename    =  'data/mo.db'
-table_name     =  'dates_lists'
-cache_dir      =  'data/html_cache/'
-start_date     =  datetime.today() - timedelta(days=15)
-end_date       =  datetime.today() 
-save_to_cache  =  True
-save_to_db     =  True
-overwrite      =  False           # if True, don't check if date exists
-pause_at       =  31              # days
-pause          =  7              # seconds
-verbose        =  False
-url            =  'https://monitoruloficial.ro/ramo_customs/emonitor/get_mo.php'
+    zidates = generate_dates(start_dt, end_dt, '%Y-%m-%d')
 
-# - - - - - - - - - - - - - - - - - - - - -  
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(f'CREATE TABLE IF NOT EXISTS {TABLE_NAME} '
+              '("date" TEXT, "json" TEXT, PRIMARY KEY("date"))')
 
-parser = argparse.ArgumentParser(description='looks for dates and return lists of parti MO')
-parser.add_argument('-start', '--start_date', help='start date')
-parser.add_argument('-end', '--end_date', help='end date')
-parser.add_argument('--overwrite', help='True / False - if False, check if date exists, if it does, don\'t overwrite')
-parser.add_argument('-m', '--mode', help='mode: l-<x> - last <x> days, all - from the beginning to today ')
-args = parser.parse_args()
-if args.start_date:
-    start_date = args.start_date
-if args.end_date:
-    end_date = args.end_date
-if args.overwrite:
-    overwrite = args.overwrite
-if args.mode:
-    mode = args.mode
-    if mode == 'all':
-        # end_date = datetime.today().strftime('%Y-%m-%d')
-        end_date = datetime.today()
- 
-zidates = generate_dates(start_date, end_date, '%Y-%m-%d')
-pbar = tqdm(len(zidates))
-ii = 0
+    logging.info(f'Range: {start_dt:%Y-%m-%d} → {end_dt:%Y-%m-%d}')
+    if overwrite:
+        logging.info('Overwriting previously saved dates')
+    else:
+        c.execute(
+            f'SELECT date FROM {TABLE_NAME} WHERE date BETWEEN ? AND ?',
+            (start_dt.strftime('%Y-%m-%d'), end_dt.strftime('%Y-%m-%d')),
+        )
+        sqlite_dates = {row[0] for row in c.fetchall()}
+        if sqlite_dates:
+            logging.info(f'Skipping {len(sqlite_dates)} days already in DB')
+        zidates = [d for d in zidates if d not in sqlite_dates]
 
-conn = sqlite3.connect(db_filename)
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS ''' + table_name + '''
-            ("date"	TEXT,
-            "json"	TEXT,
-            PRIMARY KEY("date"))''')
+    logging.info(f'Processing {len(zidates)} days')
+    session = make_session()
+    ii = 0
 
-tqdm.write(' -- dates in between: ' + start_date.strftime('%Y-%m-%d') + ' and ' + end_date.strftime('%Y-%m-%d'));
-if overwrite: 
-    tqdm.write(' -- overwriting previously saved dates')
-else:
-    tqdm.write(' -- skipping previously saved dates')
+    for oneday in tqdm(zidates):
+        data = {'today': oneday, 'rand': random.random()}
+        try:
+            response = session.post(URL_GET_MO, headers=base_headers('headers1'),
+                                    data=data, verify=False, timeout=30)
+        except Exception as e:
+            logging.error(f'Request failed for {oneday}: {e}')
+            continue
 
-if overwrite is False:
-    # exclude zidates that are already in the database
-    c.execute("SELECT date from dates_lists WHERE date BETWEEN '" + start_date.strftime('%Y-%m-%d') + "' AND '" + end_date.strftime('%Y-%m-%d') + "';")
-    sqlite_dates = [row[0] for row in c.fetchall()]
-    if len(sqlite_dates):
-        tqdm.write(' -- skipping ' + str(len(sqlite_dates)) + ' days found in the db')
-    zidates = set(zidates) - set(sqlite_dates)
-    zidates = list(zidates)
-tqdm.write(' -- going through ' + str(len(zidates)) + ' days')
+        try:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            json_data = {}
+            for div in soup.find_all('div', class_='card-body'):
+                ol = div.find('ol', class_='breadcrumb')
+                if ol is None:
+                    continue
+                key = ol.text.strip()
+                value = {a.text: a['href'] for a in div.find_all('a', class_='btn')}
+                json_data[key] = value
+        except Exception as e:
+            logging.error(f'Parse error for {oneday}: {e}')
+            continue
 
-for oneday in tqdm(zidates):
-    rows_to_insert = [] #db rows
-    data = {'today': oneday, 'rand': random.random() }
+        if save_to_cache:
+            cache_path = HTML_CACHE + oneday + '.html'
+            try:
+                with open(cache_path, 'w', encoding='utf-8') as f:
+                    f.write(soup.prettify())
+                logging.debug(f'Written cache: {cache_path}')
+            except Exception as e:
+                logging.warning(f'Cache write failed for {oneday}: {e}')
 
-    try:
-        response = requests.post(url, headers=base_headers('headers1'), data=data, verify=False)
-    except Exception as e:
-        tqdm.write('eRrx: '+ str(e))
-        continue
-    soup = BeautifulSoup(response.content, 'html.parser')
-    json_data = {}
-    for div in soup.find_all('div', class_='card-body'):
-        ol = div.find('ol', class_='breadcrumb')
-        key = ol.text.strip()
-        # TODO: encode keys ex: Partea I -> PI, Partea II-a -> PII, Partea I Maghiară -> PIM
-        value = {a.text: a['href'] for a in div.find_all('a', class_='btn')}
-        json_data[key] = value
-    json_result = json.dumps(json_data, ensure_ascii=False)
-    rows_to_insert.append((oneday, json_result))
+        if save_to_db:
+            json_result = json.dumps(json_data, ensure_ascii=False)
+            if overwrite:
+                sql = f'INSERT OR REPLACE INTO {TABLE_NAME} (date, json) VALUES (?, ?)'
+            else:
+                sql = f'INSERT INTO {TABLE_NAME} (date, json) VALUES (?, ?) ON CONFLICT(date) DO NOTHING'
+            c.execute(sql, (oneday, json_result))
+            conn.commit()
 
-    # save the HTML content to a file
-    if save_to_cache:
-        with open(cache_dir + str(oneday)+ ".html", "w", encoding="utf-8") as f:
-            f.write(soup.prettify())
-            if verbose:
-               tqdm.write('written to ' + cache_dir + str(oneday)+ ".html") 
+        ii += 1
+        time.sleep(random.random() * 2)
+        if ii % pause_at == 0:
+            time.sleep(pause)
 
-    if save_to_db:
-        sql = '''INSERT INTO {} (date, json) VALUES (?, ?)
-                ON CONFLICT(date) DO NOTHING'''.format(table_name)
-        c.executemany(sql, rows_to_insert)
-        conn.commit() 
+    conn.close()
+    tqdm.write(f'{ii} days saved to DB')
+    if sys.platform == 'darwin':
+        os.system(f'say -v ioana "în sfârșit, am gătat {ii} zile " -r 250')
 
-    ii+=1
-    # pbar.update(1)
-    time.sleep(random.random()*2)
-    if round(ii/pause_at) == ii/pause_at:
-        time.sleep(pause)
-        # os.system('say -v ioana "piiua " -r 250')
 
-conn.close()
-tqdm.write(str(ii) + ' days saved to db')
-os.system('say -v ioana "în sfârșit, am gătat ' +  str(ii) + ' zile " -r 250')
+if __name__ == '__main__':
+    main()

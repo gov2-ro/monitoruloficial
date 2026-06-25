@@ -1,268 +1,314 @@
-import sqlite3, json, requests, sys, os, time, random, re, random, json, argparse
-import logging, urllib3
+import sqlite3, json, sys, os, time, random, re, argparse, logging, urllib3
+from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
+from tqdm import tqdm
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from tqdm import tqdm
-from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
 sys.path.append("utils/")
-from common import base_headers
+from common import (
+    base_headers, parse_date, make_session, section_dir,
+    is_pdf, pdf_ok, setup_logging,
+    DATA_ROOT, DB_PATH, TABLE_NAME, URL_BASE, URL_GIDF, URL_VIEW,
+    SHY_PARTS, PACE, PACE_PAGE,
+)
 
-""" 
-read each json
-download pdfs
-check if exists, mode overwrite, mode update
-# TODO: write log to db? checksum?
-TODO: split by dates
- """
+"""
+Read the day index from SQLite, download ephemeral Parts III–VII PDFs.
+Each document is staged as individual page PDFs under data/<Px>/<year>/<date>/<name>/.
+A <name>.done file (containing the page count) is written only after all pages succeed;
+it is the authoritative completion marker used to skip already-complete documents.
+"""
 
-db_filename     =   'data/mo.db'
-table_name      =   'dates_lists'
-pdfs_root       =   'data/'
-verbose         =   False
-PART_FOLDER     =   {"III-a": "PIII", "IV-a": "PIV", "VI-a": "PVI", "VII-a": "PVII"}
 
-def section_dir(sectiune):
-    for key, folder in PART_FOLDER.items():
-        if key in sectiune:
-            return folder
-    return "P_unknown"
-
-overwrite       =   False   # if false check if file exists, don't fetch again
-pause_at        =   30      # days
-pause           =   10      # seconds
-shy_parts       =   ["III-a", "IV-a", "VI-a", "VII-a"] # ascunse după10 zile
-url_base        =   'https://monitoruloficial.ro'
-transit_url     =   'https://monitoruloficial.ro/ramo_customs/emonitor/gidf.php' # to get number of pages
-start_date      =   datetime.today() - timedelta(days=10)
-end_date        =   datetime.today()
-daysago         =   10
-timeout         =   30      # seconds per request
-pace            =   (1.5, 3.0)   # random sleep (min, max) seconds before every request
-pace_page       =   (0.6, 1.2)   # gentler pace between same-document page PDFs
-#  - - - - - - - - - - - - - - - - - - - - -
-
-# Session with a SINGLE retry on connection errors. The server IP-bans / RST-resets
-# aggressive clients, so a retry burst keeps the ban hot — fail fast and rely on the
-# per-request pacing below to stay under the rate limit.
-def make_session():
-    s = requests.Session()
-    retry = Retry(
-        total=1, connect=1, read=1,
-        backoff_factor=2,                   # one ~2s pause before the single retry
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=frozenset(['GET', 'POST']),
-        raise_on_status=False,
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    s.mount('https://', adapter)
-    s.mount('http://', adapter)
-    return s
-
-session = make_session()
-
-def be_polite(bounds=pace):
-    """Random delay before a request to stay under the server's rate limit."""
+def be_polite(bounds=PACE):
     time.sleep(random.uniform(*bounds))
 
-parser = argparse.ArgumentParser(description='looks for dates and return lists of parti MO')
-parser.add_argument('-start', '--start_date', help='start date')
-parser.add_argument('-end', '--end_date', help='end date')
-parser.add_argument('-days', '--days_ago', help='ho many days back from today')
-parser.add_argument('--overwrite', help='True / False - if False, check if date exists, if it does, don\'t overwrite')
-parser.add_argument('-m', '--mode', help='mode: l-<x> - last <x> days, all - from the beginning to today ')
-args = parser.parse_args()
-if args.start_date:
-    start_date = args.start_date
-if args.end_date:
-    end_date = args.end_date
-if args.overwrite:
-    overwrite = args.overwrite
-if args.days_ago:
-    daysago = args.days_ago
-    start_date = end_date - timedelta(days=int(daysago))
-if args.mode:
-    mode = args.mode
-    if mode == 'all':
-        end_date = datetime.today().strftime('%Y-%m-%d')
 
+def main():
+    parser = argparse.ArgumentParser(description='Download ephemeral Parts III–VII PDFs')
+    parser.add_argument('-start', '--start_date', help='start date YYYY-MM-DD')
+    parser.add_argument('-end',   '--end_date',   help='end date YYYY-MM-DD')
+    parser.add_argument('-days',  '--days_ago',   help='how many days back from today')
+    parser.add_argument('--overwrite', action=argparse.BooleanOptionalAction, default=False,
+                        help='re-download existing files (--no-overwrite to skip, default)')
+    parser.add_argument('-m', '--mode', help='l-<x>: last x days; all: from 2000-01-04')
+    parser.add_argument('--debug', action='store_true', help='verbose debug logging')
+    args = parser.parse_args()
 
-# end_date = datetime.today().strftime('%Y-%m-%d')
+    setup_logging(args.debug)
 
-conn = sqlite3.connect(db_filename)
-c = conn.cursor()
-# c.execute('SELECT * FROM ' + table_name + ' ORDER BY date DESC')
-# c.execute("SELECT * from '" + table_name + "' WHERE date BETWEEN '2023-04-10' AND '2023-04-12';")
-c.execute("SELECT * from '" + table_name + "' WHERE date BETWEEN '" + str(start_date) + "' AND '" + end_date.strftime('%Y-%m-%d') + "';") 
-rows = c.fetchall()
- 
-nrows = len(rows)
-tqdm.write(' > ' + str(nrows) + ' days in the db')
-all_files = 0
-files_found = new_files_found = 0
-prev_year = 1000
-consecutive_failures = 0
-max_consecutive_failures = 2
+    start_dt = datetime.today() - timedelta(days=10)
+    end_dt   = datetime.today()
 
-for row in tqdm(rows, desc='days'):
-# Iterate over the rows and convert the JSON string to a dictionary
-    date, json_str = row
-    json_dict = json.loads(json_str)
-    ii = 0
-    for sectiune, parti in tqdm(json_dict.items(), desc='părți', leave=False):
-        # check if parte < 3, don't bother, skip.
-        if not any(part in sectiune for part in shy_parts):
+    if args.start_date:
+        start_dt = parse_date(args.start_date)
+    if args.end_date:
+        end_dt = parse_date(args.end_date)
+    if args.days_ago:
+        start_dt = end_dt - timedelta(days=int(args.days_ago))
+    if args.mode:
+        if args.mode == 'all':
+            start_dt = datetime(2000, 1, 4)
+            end_dt   = datetime.today()
+        elif args.mode.startswith('l-'):
+            try:
+                start_dt = datetime.today() - timedelta(days=int(args.mode[2:]))
+                end_dt   = datetime.today()
+            except ValueError:
+                logging.error(f'Invalid mode {args.mode!r}. Use l-<number> or all.')
+                raise SystemExit(1)
+
+    overwrite            = args.overwrite
+    pause_at             = 30    # files between longer pauses
+    pause                = 10    # seconds
+    timeout              = 30    # seconds per request
+    max_consecutive_failures = 2
+
+    conn = sqlite3.connect(DB_PATH)
+    c    = conn.cursor()
+    c.execute(
+        f'SELECT * FROM {TABLE_NAME} WHERE date BETWEEN ? AND ?',
+        (start_dt.strftime('%Y-%m-%d'), end_dt.strftime('%Y-%m-%d')),
+    )
+    rows = c.fetchall()
+
+    tqdm.write(f' > {len(rows)} days in the DB')
+    all_files = 0
+    files_found = 0
+    consecutive_failures = 0
+
+    session = make_session()
+
+    for row in tqdm(rows, desc='days'):
+        date, json_str = row
+        try:
+            json_dict = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logging.error(f'JSON decode error for {date}: {e}')
             continue
 
-        for nr, url in tqdm(parti.items(), desc='pdfs', leave=False):
-            jj = 0
-            filename = os.path.splitext(url[1:])[0]
-            urlparts = filename.split('--')
-            year=urlparts[-1]
-            if len(year) != 4:
-                tqdm.write('err: ' + str(year))
+        for sectiune, parti in tqdm(json_dict.items(), desc='părți', leave=False):
+            if not any(part in sectiune for part in SHY_PARTS):
+                continue
 
-            part_out = os.path.join(pdfs_root, section_dir(sectiune), str(year))
-            part_tmp = os.path.join(pdfs_root, section_dir(sectiune), str(year), date)
+            for nr, url in tqdm(parti.items(), desc='pdfs', leave=False):
+                filename = os.path.splitext(url[1:])[0]
+                urlparts  = filename.split('--')
+                year      = urlparts[-1]
+                if len(year) != 4:
+                    logging.error(f'Unexpected year token {year!r} in URL {url}')
+                    continue
 
-            if str(year) != str(prev_year):
-                tqdm.write(f" -- current year: " + str(year) + " -", end="\r")
+                part_out  = os.path.join(DATA_ROOT, section_dir(sectiune), year)
+                part_tmp  = os.path.join(DATA_ROOT, section_dir(sectiune), year, date)
+                doc_dir   = os.path.join(part_tmp, filename)
+                done_path = os.path.join(doc_dir, filename + '.done')
+
+                # ── Ensure year directory exists ─────────────────────────────
                 if not os.path.exists(part_out):
                     os.makedirs(part_out)
-                    tqdm.write("created " + part_out)
+                    tqdm.write(f'Created {part_out}')
 
-            prev_year = year
+                # ── Early completeness check (no network needed) ─────────────
+                # Skip only if .done exists AND every page file is present+valid.
+                if not overwrite and os.path.isfile(done_path):
+                    try:
+                        stored_count = int(open(done_path).read().strip())
+                        all_present = all(
+                            _page_valid(os.path.join(doc_dir, f'{i}.pdf'))
+                            for i in range(1, stored_count + 1)
+                        )
+                        if all_present:
+                            files_found += stored_count
+                            logging.debug(f'Complete, skipping: {filename}')
+                            continue
+                    except (ValueError, OSError):
+                        pass  # corrupted .done — fall through and re-download
 
-            if verbose:
-                tqdm.write('>> ' + url_base + url)
+                logging.debug(f'>> {URL_BASE + url}')
 
-            if overwrite is False and os.path.isfile(os.path.join(part_out, filename + '.pdf')):
-                files_found += 1
-                if verbose:
-                    tqdm.write('skipping ' + date + '/' + filename + '.pdf');
-                continue #if overwrite = False and file exists, continue
-
-               
-            be_polite()
-            try:
-                response = session.get(url_base + url, headers=base_headers('headers2'), verify=False, timeout=timeout)
-                consecutive_failures = 0
-            except Exception as e:
-                logging.error(f'Error processing URL {url_base + url}: {e}')
-                consecutive_failures += 1
-                if consecutive_failures >= max_consecutive_failures:
-                    tqdm.write(f'Stopping: {consecutive_failures} consecutive failures.')
-                    conn.close()
-                    raise SystemExit(1)
-                continue
-
-            # get fid value
-
-            soup = BeautifulSoup(response.content, 'html.parser')
-            script_tags = soup.find_all('script')
-            fid_value = None
-            
-            for script_tag in script_tags:
-                # match = re.search("var fid = '(.*)';", script_tag.string)
-                if script_tag.string is None:
+                # ── Request 1: GET part page to extract fid ──────────────────
+                be_polite()
+                try:
+                    response = session.get(URL_BASE + url, headers=base_headers('headers2'),
+                                           verify=False, timeout=timeout)
+                except Exception as e:
+                    logging.error(f'GET {URL_BASE + url}: {e}')
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
+                        conn.close()
+                        raise SystemExit(1)
                     continue
-                try:
-                    match = re.search(r"var fid\s*=\s*'(.*)';", script_tag.string)
-                except Exception as e:
-                    print(e)
-                    breakpoint()
 
-                if match:
-                    fid_value = match.group(1)
-                    break
+                if response.status_code != 200:
+                    logging.warning(f'HTTP {response.status_code} for {URL_BASE + url}')
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
+                        conn.close()
+                        raise SystemExit(1)
+                    continue
 
-            # now request gidf.php to find out the number of pages
-            data = {'fid': fid_value, 'rand': random.random() }
-            
-            be_polite()
-            try:
-                response = session.post(transit_url, headers=base_headers('headers1'), data=data, verify=False, timeout=timeout)
                 consecutive_failures = 0
-            except Exception as e:
-                logging.error('eRrx: '+ str(e))
-                consecutive_failures += 1
-                if consecutive_failures >= max_consecutive_failures:
-                    tqdm.write(f'Stopping: {consecutive_failures} consecutive failures.')
-                    conn.close()
-                    raise SystemExit(1)
-                continue
 
-            # Server sometimes returns HTTP 200 with an empty/HTML body under load.
-            # Guard the parse so a single bad response skips this item instead of
-            # killing the whole run with an unhandled JSONDecodeError/KeyError.
-            try:
-                gidf_json = json.loads(response.text)
-                title = gidf_json['t']
-                page_count = gidf_json['p']
-                folder = gidf_json['f']
-            except (json.JSONDecodeError, KeyError) as e:
-                logging.error(f'Bad gidf response for {url_base + url} (fid={fid_value}): {e}; body[:120]={response.text[:120]!r}')
-                continue
-            ziurl_jsonp = f"https://monitoruloficial.ro/ramo_customs/emonitor/showmo/services/view.php?doc={gidf_json['d']}&format=jsonp&subfolder={gidf_json['f']}&page=10"
-            
-            os.makedirs(os.path.join(part_tmp, filename), exist_ok=True)
+                soup     = BeautifulSoup(response.content, 'html.parser')
+                fid_value = None
+                for script_tag in soup.find_all('script'):
+                    if script_tag.string is None:
+                        continue
+                    try:
+                        match = re.search(r"var fid\s*=\s*'(.*)';", script_tag.string)
+                    except Exception as e:
+                        logging.error(f'Regex error extracting fid: {e}')
+                        continue
+                    if match:
+                        fid_value = match.group(1)
+                        break
 
-            if overwrite is False and os.path.isfile(os.path.join(part_tmp, filename, filename + '.json')):
-                tqdm.write('skipping ' + date + '/' + filename + '.json');
-                continue #if overwrite = False and file exists, continue
+                if fid_value is None:
+                    logging.warning(f'No fid found for {URL_BASE + url} — skipping')
+                    continue
 
-            be_polite()
-            try:
-                response = session.get(ziurl_jsonp, headers=base_headers('headers2'), verify=False, timeout=timeout)
-            except Exception as e:
-                logging.error(f'Error processing URL {ziurl_jsonp}: {e}')
-                continue   # don't fall through and write the previous response's body
-
-            try:
-                json_path = os.path.join(part_tmp, filename, filename + '.json')
-                with open(json_path, 'wb') as f:
-                    f.write(response.content)
-                    tqdm.write(' >> ' + json_path)
-            except Exception as e:
-                logging.error(f' > E172 > Error saving PDF URL : {e}')
-
-            for i in range(1, gidf_json['p'] + 1):
-                ziurl = f"https://monitoruloficial.ro/ramo_customs/emonitor/showmo/services/view.php?doc={gidf_json['d']}&format=pdf&subfolder={gidf_json['f']}&page={i}"
-
-                page_path = os.path.join(part_tmp, filename, str(i) + '.pdf')
-                if overwrite is False and os.path.isfile(page_path):
-                        files_found += 1
-                        tqdm.write('skipping ' + date + '/' + filename + '.pdf');
-                        continue #if overwrite = False and file exists, continue
-
-                be_polite(pace_page)
+                # ── Request 2: POST gidf.php for page count ──────────────────
+                data = {'fid': fid_value, 'rand': random.random()}
+                be_polite()
                 try:
-                    response = session.get(ziurl, headers=base_headers('headers2'), verify=False, timeout=timeout)
+                    response = session.post(URL_GIDF, headers=base_headers('headers1'),
+                                            data=data, verify=False, timeout=timeout)
                 except Exception as e:
-                    logging.error(f'Error processing URL {url}: {e}')
-                    continue   # skip this page rather than writing a stale/garbage PDF
+                    logging.error(f'POST gidf (fid={fid_value}): {e}')
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
+                        conn.close()
+                        raise SystemExit(1)
+                    continue
+
+                if response.status_code != 200:
+                    logging.warning(f'gidf HTTP {response.status_code} (fid={fid_value})')
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
+                        conn.close()
+                        raise SystemExit(1)
+                    continue
 
                 try:
-                    with open(page_path, 'wb') as f:
-                        f.write(response.content)
-                        all_files+=1
-                except Exception as e:
-                    logging.error(f'Error saving PDF URL : {e}')
-            
-            jj+=1
-            if round(all_files/pause_at) == all_files/pause_at:
-                time.sleep(pause)
-                # os.system('say -v ioana "piiua " -r 250')
-                if (new_files_found != files_found): 
-                    tqdm.write("Files found: " + str(files_found))
-                    new_files_found = files_found
-            # tqdm.write('   - >  ' + str(ii) + '/' + str(nrows) + ' ' + str(ii+jj) + ' ' + str(jj))
-    ii+=1
-    
-    # time.sleep(random.random()*1.75)
+                    gidf_json  = json.loads(response.text)
+                    page_count = gidf_json['p']
+                except (json.JSONDecodeError, KeyError) as e:
+                    logging.error(
+                        f'Bad gidf response (fid={fid_value}): {e}; '
+                        f'body[:120]={response.text[:120]!r}'
+                    )
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
+                        conn.close()
+                        raise SystemExit(1)
+                    continue
 
-conn.close()
-tqdm.write(' -- done ' + str(len(rows)) + ' days ' + str(ii) + ' secțiuni ' + str(all_files) + ' saved pdfs')
-os.system('say -v ioana "în sfârșit, am gătat ' +  str(all_files) + ' fișiere " -r 250')
+                consecutive_failures = 0
+
+                os.makedirs(doc_dir, exist_ok=True)
+
+                # ── Request 3: GET jsonp metadata ────────────────────────────
+                ziurl_jsonp = (
+                    f"{URL_VIEW}?doc={gidf_json['d']}&format=jsonp"
+                    f"&subfolder={gidf_json['f']}&page=10"
+                )
+                be_polite()
+                try:
+                    response = session.get(ziurl_jsonp, headers=base_headers('headers2'),
+                                           verify=False, timeout=timeout)
+                except Exception as e:
+                    logging.error(f'GET jsonp {ziurl_jsonp}: {e}')
+                    continue
+
+                if response.status_code == 200 and response.content:
+                    json_path = os.path.join(doc_dir, filename + '.json')
+                    try:
+                        with open(json_path, 'wb') as f:
+                            f.write(response.content)
+                        logging.debug(f'Saved jsonp: {json_path}')
+                    except Exception as e:
+                        logging.error(f'Error saving jsonp: {e}')
+                else:
+                    logging.warning(
+                        f'Bad jsonp response: HTTP {response.status_code} for {ziurl_jsonp}'
+                    )
+
+                # ── Download pages ───────────────────────────────────────────
+                pages_saved = 0
+                for i in range(1, page_count + 1):
+                    ziurl     = (
+                        f"{URL_VIEW}?doc={gidf_json['d']}&format=pdf"
+                        f"&subfolder={gidf_json['f']}&page={i}"
+                    )
+                    page_path = os.path.join(doc_dir, f'{i}.pdf')
+
+                    if not overwrite and _page_valid(page_path):
+                        pages_saved += 1
+                        continue
+
+                    be_polite(PACE_PAGE)
+                    try:
+                        response = session.get(ziurl, headers=base_headers('headers2'),
+                                               verify=False, timeout=timeout)
+                    except Exception as e:
+                        logging.error(f'GET page {i} of {filename}: {e}')
+                        continue
+
+                    if not pdf_ok(response):
+                        logging.warning(
+                            f'Bad page {i} response: HTTP {response.status_code}, '
+                            f'len={len(response.content)}, magic={response.content[:5]!r}'
+                        )
+                        continue
+
+                    try:
+                        with open(page_path, 'wb') as f:
+                            f.write(response.content)
+                        pages_saved += 1
+                        all_files  += 1
+                    except Exception as e:
+                        logging.error(f'Error saving page {i} of {filename}: {e}')
+
+                # ── Write completion marker only when fully downloaded ────────
+                if pages_saved == page_count:
+                    try:
+                        with open(done_path, 'w') as f:
+                            f.write(str(page_count))
+                    except Exception as e:
+                        logging.error(f'Error writing .done for {filename}: {e}')
+                else:
+                    logging.warning(
+                        f'{filename}: saved {pages_saved}/{page_count} pages — '
+                        f'.done not written, will retry next run'
+                    )
+
+                if all_files > 0 and all_files % pause_at == 0:
+                    time.sleep(pause)
+                    if files_found:
+                        tqdm.write(f'Files found (skipped): {files_found}')
+
+    conn.close()
+    tqdm.write(f'Done: {len(rows)} days, {all_files} pages saved, {files_found} skipped')
+    if sys.platform == 'darwin':
+        os.system(f'say -v ioana "în sfârșit, am gătat {all_files} fișiere " -r 250')
+
+
+def _page_valid(path: str) -> bool:
+    """True if path exists and starts with the PDF magic bytes."""
+    if not os.path.isfile(path):
+        return False
+    try:
+        with open(path, 'rb') as f:
+            return is_pdf(f.read(5))
+    except OSError:
+        return False
+
+
+if __name__ == '__main__':
+    main()

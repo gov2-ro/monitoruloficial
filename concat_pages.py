@@ -75,10 +75,10 @@ def concat_doc(page_paths: list[Path], output_path: Path, dry_run: bool) -> bool
                 writer.add_page(page)
         with open(output_path, 'wb') as f:
             writer.write(f)
-        logging.info(f'Merged {len(page_paths)} pages → {output_path}')
+        logging.debug(f'Merged {len(page_paths)} pages → {output_path}')
         return True
     except Exception as e:
-        logging.error(f'Failed to merge {output_path}: {e}')
+        tqdm.write(f'ERROR: Failed to merge {output_path}: {e}')
         return False
 
 
@@ -139,10 +139,10 @@ def main():
     for doc_dir, done_path in tqdm(doc_dirs, desc='docs'):
         page_count = _read_done(done_path)
         if page_count is None:
-            logging.warning(f'Unreadable .done in {doc_dir} — skipping')
+            tqdm.write(f'WARN: Unreadable .done in {doc_dir} — skipping')
             continue
         if page_count == 0:
-            logging.warning(f'{doc_dir.name}: .done says 0 pages — run toolbench/backfill_done.py first')
+            tqdm.write(f'WARN: {doc_dir.name}: .done says 0 pages — run toolbench/backfill_done.py first')
             failed += 1
             continue
 
@@ -163,8 +163,8 @@ def main():
 
         page_paths = _all_pages_valid(doc_dir, page_count)
         if page_paths is None:
-            logging.warning(
-                f'{doc_dir.name}: .done says {page_count} pages but some are '
+            tqdm.write(
+                f'WARN: {doc_dir.name}: .done says {page_count} pages but some are '
                 f'missing or invalid — skipping'
             )
             failed += 1
@@ -179,7 +179,7 @@ def main():
                     shutil.move(str(doc_dir), str(raw_dest))
                     logging.debug(f'Moved source → {raw_dest}')
                 except Exception as e:
-                    logging.warning(f'Move to _raw failed for {doc_dir.name}: {e}')
+                    tqdm.write(f'WARN: Move to _raw failed for {doc_dir.name}: {e}')
         else:
             failed += 1
 

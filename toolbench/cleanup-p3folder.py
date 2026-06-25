@@ -2,8 +2,9 @@
 
 import os, sqlite3, sys, shutil, logging
 
-root_folder =   '../../data/mo/pdfs/_p3+/tmp/'
-db_filename     =   '../../data/mo/mo.db'
+# repo-root-relative; run from the repo root (e.g. `python toolbench/cleanup-p3folder.py`)
+root_folder =   'data/pdfs/_p3+/tmp/'
+db_filename     =   'data/mo.db'
 table_name      =   'dates_lists'
 
 

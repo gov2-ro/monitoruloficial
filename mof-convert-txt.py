@@ -91,7 +91,7 @@ def clean_output(text: str) -> str:
     
     return text.strip()
 
-rootFolder = '../../data/mo/'
+rootFolder = 'data/'   # repo-root-relative; run this script from the repo root
 txtFolder = rootFolder + 'text/ciocan/'
 pdfFolder = rootFolder + '_obsolete/small size samples/'
 

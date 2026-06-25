@@ -38,9 +38,16 @@ if __name__ == "__main__":
 
     script_filenames = ["get_index.py", "fetch_p3+.py"]
     total = 0.0
+    scripts_run = 0
     for script in script_filenames:
-        elapsed, _ = run_script(script, ['-start', args.start_date])
+        elapsed, ret = run_script(script, ['-start', args.start_date])
         total += elapsed
+        scripts_run += 1
+        if ret != 0:
+            logging.error(f'Pipeline aborted: {script} exited with code {ret}')
+            log_run_end(db_conn, run_id, 'error', {'scripts_run': scripts_run, 'total_duration_s': round(total, 2), 'aborted_at': script})
+            db_conn.close()
+            raise SystemExit(ret)
 
-    log_run_end(db_conn, run_id, 'ok', {'scripts_run': len(script_filenames), 'total_duration_s': round(total, 2)})
+    log_run_end(db_conn, run_id, 'ok', {'scripts_run': scripts_run, 'total_duration_s': round(total, 2)})
     db_conn.close()

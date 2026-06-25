@@ -64,6 +64,8 @@ def main():
 
     session = make_session()
     downloaded = skipped = errors = 0
+    consecutive_failures = 0
+    max_consecutive_failures = 2
 
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -114,9 +116,16 @@ def main():
 
                         if fetch_pdf(session, URL_BASE, url, output_path, base_headers('headers2')):
                             downloaded += 1
+                            consecutive_failures = 0
                             time.sleep(random.uniform(2.0, 4.0))
                         else:
                             errors += 1
+                            consecutive_failures += 1
+                            if consecutive_failures >= max_consecutive_failures:
+                                logging.error(f'Stopping: {consecutive_failures} consecutive failures')
+                                log_run_end(conn, run_id, 'error', {'downloaded': downloaded, 'skipped': skipped, 'errors': errors})
+                                conn.close()
+                                raise SystemExit(1)
                             time.sleep(random.uniform(5.0, 8.0))
 
             except json.JSONDecodeError as e:

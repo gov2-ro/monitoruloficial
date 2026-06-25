@@ -22,6 +22,13 @@
   Updated `fetch_p3+.py` `part_tmp` from `…/tmp/<date>` to `…/<year>/<date>`.
   Path audit confirmed both scripts produce paths matching actual disk structure.
 
+## Debugging & fixes
+
+### 2026-06-25 — fix: fetch_p3+.py logging + xmo alias corrected
+- Added `tqdm.write` to `fetch_p3+.py` to show each MO name and destination folder at normal log level (was `logging.debug`, invisible unless `--debug`).
+- Diagnosed why `xmo` alias was processing 233 days of stale 2025 data instead of the current 10-day window: `--start_date 2025-07-18` had been placed on `fetch_p3+.py` by mistake — it was intended for `fetch_pdfs.py`. Since Parts III–VII are only available for 10 days from publication, running `fetch_p3+.py` with an old start date wastes time hitting the site for unavailable content.
+- Fixed `xmo` alias in `~/.zshrc`: removed `--start_date 2025-07-18` from `fetch_p3+.py`. Script now always runs with its default last-10-days window.
+
 ## Audit & hardening
 
 ### 2026-06-25 — Pipeline audit: correctness fixes, robustness hardening, concat_pages.py

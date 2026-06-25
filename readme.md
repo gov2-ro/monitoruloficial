@@ -145,15 +145,18 @@ data/              gitignored: mo.db, html_cache/, PI/ PII/ PIII/ … PVII/, tex
 
 ## Proiecte similare
 
-[ciocan/monitorul-ii](https://github.com/ciocan/monitorul-ii), [Ansvar-Systems/Romanian-law-mcp](https://github.com/Ansvar-Systems/Romanian-law-mcp), [v-khdumi/MonitorulOficialPDF](https://github.com/v-khdumi/MonitorulOficialPDF)
+Scraping: [ciocan/monitorul-ii](https://github.com/ciocan/monitorul-ii), [Ansvar-Systems/Romanian-law-mcp](https://github.com/Ansvar-Systems/Romanian-law-mcp), [v-khdumi/MonitorulOficialPDF](https://github.com/v-khdumi/MonitorulOficialPDF)
 
-vezi și:
+### UI
 
 | proiect | obs | price |
 |-----|-----|-----|
 | [monitoruljuridic.ro](http://www.monitoruljuridic.ro/) | no formatting | gratis |
 | [ro-lex.ro](https://www.ro-lex.ro/) |  | gratis |
+| [monitorul.ai](https://monitorul.ai/) |  |  |
 | [lege-online.ro](https://www.lege-online.ro/monitoare-oficiale) |  |  |
 | [lege5.ro](https://lege5.ro/App/MonitorOficial) | formatted, linked | paid |
 | [idrept.ro](https://lege5.ro/App/MonitorOficial) | formatted, linked | paid |
 
+
+vezi și: [senisioi/rolegal](https://github.com/senisioi/rolegal)

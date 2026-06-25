@@ -14,6 +14,20 @@
 
 ## Text extraction (roadmap)
 
+- [ ] **`convert.py` — PDF → Markdown batch converter** — plan at `~/.claude/plans/check-the-fetched-pdfs-transient-russell.md`. Use `pdftotext` (poppler, already installed); sibling `.md` output; MO-specific cleanup (strip running headers, page numbers); YAML frontmatter from filename; ThreadPoolExecutor; CLI flags matching existing scripts. Flat sections (PI/PII/PIM/PV, ~20K PDFs) ready immediately; PIII/PIV/PVI/PVII need `concat_pages.py` first. Supersedes `mof-convert-txt.py`.
+- [ ] **SQLite FTS5 indexing** — after `convert.py`, index `.md` content into an FTS5 table in `mo.db` for full-text search (zero extra infrastructure).
 - [ ] PDF → structured text/HTML — see [pdf2txt.xlsx](https://docs.google.com/spreadsheets/d/1APEmulzWa7PGgDg_mc-7rnY_vbxX2Q6Y)
 - [ ] Split into chapters → initial UI
 - [ ] NLP, detect entities
+
+## Phase 2: Analysis & UI
+
+- [ ] **NER on extracted text using LegalNERo** — [LegalNERo](https://relate.racai.ro/repository/legalnero), [CarolLuca/LegalNERo](https://github.com/CarolLuca/LegalNERo) is a manually annotated NER corpus from RACAI (Romanian Academy) covering MO documents. Entities: `PER`, `LOC`, `ORG`, `TIME`, plus fine-grained legal refs (`Law`, `Order`, `EmergencyOrdinance`, `Decree`, `Regulation`, `Directive`, `Code`, etc.). Formats: BRAT `.ann` + CoNLL-U Plus. Pre-trained models on this corpus exist on HuggingFace. Use case: from extracted PDF text, identify cited laws, institutions, locations, dates automatically. Start by running an off-the-shelf model; fine-tune later if needed. License: CC BY-NC-ND 4.0 (non-commercial). See also [senisioi/rolegal](https://github.com/senisioi/rolegal), [dumitrescustefan/ronec](https://github.com/dumitrescustefan/ronec/) / [bert-base-romanian-ner](https://huggingface.co/dumitrescustefan/bert-base-romanian-ner)
+- [ ] **Search / browse UI** — after text extraction and NER, expose a simple interface to query documents by entity, date, gazette part (Parte I–VII), or full-text search.
+
+
+## Misc Analysis/UI Ideas
+- MO browser with entity detection. 
+- index by entity / views / themed profiles?
+- MO ELI5/TL;DR version. MO Daily
+

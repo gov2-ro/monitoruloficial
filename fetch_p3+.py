@@ -125,7 +125,7 @@ def main():
                     except (ValueError, OSError):
                         pass  # corrupted .done — fall through and re-download
 
-                logging.debug(f'>> {URL_BASE + url}')
+                tqdm.write(f'  MO: {filename}  →  {doc_dir}')
 
                 # ── Request 1: GET part page to extract fid ──────────────────
                 be_polite()

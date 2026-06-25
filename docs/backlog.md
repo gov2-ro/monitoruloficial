@@ -14,11 +14,13 @@
 
 ## Text extraction (roadmap)
 
-- [ ] **`convert.py` — PDF → Markdown batch converter** — plan at `~/.claude/plans/check-the-fetched-pdfs-transient-russell.md`. Use `pdftotext` (poppler, already installed); sibling `.md` output; MO-specific cleanup (strip running headers, page numbers); YAML frontmatter from filename; ThreadPoolExecutor; CLI flags matching existing scripts. Flat sections (PI/PII/PIM/PV, ~20K PDFs) ready immediately; PIII/PIV/PVI/PVII need `concat_pages.py` first. Supersedes `mof-convert-txt.py`.
-- [ ] **SQLite FTS5 indexing** — after `convert.py`, index `.md` content into an FTS5 table in `mo.db` for full-text search (zero extra infrastructure).
+- [x] **`convert.py` — PDF → Markdown batch converter** — implemented 2026-06-25. pdftotext, sibling `.md` output, YAML frontmatter, header/pagenum cleanup, ThreadPoolExecutor. Note: PV "PDFs" are actually HTML responses (not real PDFs); pdftotext rejects them — PV conversion will fail until re-downloaded correctly.
+- [ ] **SQLite FTS5 indexing** — index `.md` content from `convert.py` into an FTS5 table in `mo.db` for full-text search (zero extra infrastructure).
+- [ ] **PV section re-download** — `data/PV/` files are HTML (not PDFs); `pdf_ok()` check was not enforced on download. Re-fetch these 12 files using the correct PDF URL and re-run `convert.py -s PV`.
 - [ ] PDF → structured text/HTML — see [pdf2txt.xlsx](https://docs.google.com/spreadsheets/d/1APEmulzWa7PGgDg_mc-7rnY_vbxX2Q6Y)
 - [ ] Split into chapters → initial UI
 - [ ] NLP, detect entities
+- [ ] text extraction should be used for both analysis and rendering of PDFs as HTML - reconstructing layout, pagination and columns (but responsive).
 
 ## Phase 2: Analysis & UI
 

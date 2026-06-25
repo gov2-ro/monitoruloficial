@@ -22,6 +22,17 @@
   Updated `fetch_p3+.py` `part_tmp` from `…/tmp/<date>` to `…/<year>/<date>`.
   Path audit confirmed both scripts produce paths matching actual disk structure.
 
+## Text extraction
+
+### 2026-06-25 — convert.py: batch PDF → Markdown converter
+- Implemented `convert.py` per the plan in `docs/reference/claude-plans-archive/check-the-fetched-pdfs-transient-russell.md`.
+- Uses `pdftotext` (poppler) via subprocess; outputs sibling `.md` files with YAML frontmatter parsed from the filename (`part`, `number`, `year`, `is_bis`, `date`).
+- `clean_text()` strips per-page running headers (`MONITORUL OFICIAL AL ROMÂNIEI…`), leading page-number lines, and ISSN/barcode artifacts; rejoins pages with `\n\n---\n\n` for LLM chunking.
+- ThreadPoolExecutor with configurable workers; tqdm progress bar; idempotent (skips existing `.md` unless `--overwrite`).
+- Smoke-tested on PI (16,704 PDFs dry-run confirmed; 3 real conversions verified correct frontmatter, no headers, Romanian chars intact).
+- Found: PV "PDFs" are HTML responses (12 files), not real PDFs — `pdftotext` rejects them. Added backlog item to re-download correctly.
+- Deep sections (PIII/PIV/PVI/PVII) have no merged PDFs yet — `convert.py` warns and skips; run `concat_pages.py` first.
+
 ## Debugging & fixes
 
 ### 2026-06-25 — fix: fetch_p3+.py logging + xmo alias corrected

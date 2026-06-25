@@ -21,11 +21,17 @@ python fetch_p3+.py                   # download ephemeral Parts III–VII (onli
 python fetch_pdfs.py                  # download persistent Parts I/II PDFs
 python concat_pages.py                # merge per-page PDFs into single-document PDFs
 python concat_pages.py --dry-run      # preview without writing
-python mof-convert-txt.py             # experimental PyPDF2 PDF→markdown conversion
+python convert.py                     # convert PDFs → Markdown (all sections, skip existing)
+python convert.py -s PV               # convert one section (smoke test)
+python convert.py -s PI PII PIM PV    # flat sections only (ready without concat_pages.py)
+python convert.py --overwrite         # force reconvert
+python convert.py --dry-run           # preview counts only
+python mof-convert-txt.py             # experimental PyPDF2 PDF→markdown conversion (superseded)
 ```
 
 Dependencies (no requirements file — install manually): `requests`, `beautifulsoup4`, `tqdm`,
-`urllib3`, `PyPDF2`, `pypdf` (for `concat_pages.py`). Python 3.
+`urllib3`, `PyPDF2`, `pypdf` (for `concat_pages.py`), `poppler` / `pdftotext`
+(for `convert.py` — install via `brew install poppler` on macOS). Python 3.
 
 CLI flags are **per-script**:
 
@@ -35,6 +41,7 @@ CLI flags are **per-script**:
 | `fetch_p3+.py` | `-start` `-end` `-days` `--overwrite/--no-overwrite` `-m/--mode` `--debug` |
 | `fetch_pdfs.py` | `--debug` |
 | `concat_pages.py` | `[root]` `--dry-run` `--overwrite/--no-overwrite` `--debug` |
+| `convert.py` | `-s/--sections` `--dry-run` `--overwrite/--no-overwrite` `-w/--workers` `--debug` |
 | `main.py` | `-start` only |
 
 `--overwrite` re-processes items already on disk; `--no-overwrite` (the default) skips them.
@@ -115,7 +122,8 @@ get_index.py       day index → SQLite + HTML cache
 fetch_pdfs.py      Part I/II PDFs (persistent)
 fetch_p3+.py       Parts III–VII PDFs (ephemeral, ~10 days)
 concat_pages.py    merge per-page PDFs into single-document PDFs
-mof-convert-txt.py one-off PDF→markdown experiment
+convert.py         batch PDF → Markdown (pdftotext; sibling .md output; supersedes mof-convert-txt.py)
+mof-convert-txt.py one-off PDF→markdown experiment (superseded by convert.py)
 utils/common.py    shared helpers, constants, session factory
 toolbench/         maintenance one-offs (e.g. cleanup-p3folder.py)
 docs/              backlog.md / activity-log.md
@@ -135,6 +143,7 @@ data/              gitignored: mo.db, html_cache/, PI/ PII/ PIII/ … PVII/, tex
             - [ ] OCR needed pages
 
 - [ ] structured text/html from PDF
+    - [x] PDF → Markdown (`convert.py`, pdftotext)
     - [ ] PDF → HTML see [pdf2txt.xslx](https://docs.google.com/spreadsheets/d/1APEmulzWa7PGgDg_mc-7rnY_vbxX2Q6Y) 
     - [ ] split into chapters → initial UI 
     - [ ] NLP, detect entities

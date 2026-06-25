@@ -14,7 +14,7 @@ import logging
 from tqdm import tqdm
 from urllib.parse import urlparse
 
-sys.path.append("../utils/")
+sys.path.append("utils/")
 from common import base_headers
 
 logging.basicConfig(

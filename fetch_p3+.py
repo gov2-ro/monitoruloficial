@@ -7,7 +7,7 @@ from urllib3.util.retry import Retry
 from tqdm import tqdm
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
-sys.path.append("../utils/")
+sys.path.append("utils/")
 from common import base_headers
 
 """ 

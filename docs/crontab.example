@@ -7,11 +7,21 @@
 # All scripts use __file__-relative paths, so cwd doesn't matter.
 # Edit REPO and PYTHON to match your VPS environment.
 #
-# Check your Python path:  which python3
-# Check your repo path:     realpath /path/to/repo
+# Check your repo path:  realpath /path/to/repo
+#
+# ── Virtual environment ───────────────────────────────────────────────────────
+# Point PYTHON directly at the venv binary — do NOT use `source activate`.
+# `source` only works in interactive shells; cron runs /bin/sh with no profile.
+#
+# If using a venv at /path/to/venv:
+#   PYTHON=/path/to/venv/bin/python
+#
+# To find it on the VPS after creating/activating the venv:
+#   which python     (while venv is active)
+# ─────────────────────────────────────────────────────────────────────────────
 
 REPO=/path/to/monitoruloficial
-PYTHON=/usr/bin/python3
+PYTHON=/path/to/venv/bin/python
 
 # ── Twice-daily pipeline: index + ephemeral PDFs (Parts III–VII) ─────────────
 # Runs at 10:00 and 22:00, Mon–Fri (gazette is only published on weekdays).

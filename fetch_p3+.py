@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-sys.path.append("utils/")
+sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent / 'utils'))
 from common import (
     base_headers, parse_date, make_session, section_dir,
     is_pdf, pdf_ok, setup_logging,
@@ -110,20 +110,27 @@ def main():
                     tqdm.write(f'Created {part_out}')
 
                 # ── Early completeness check (no network needed) ─────────────
-                # Skip only if .done exists AND every page file is present+valid.
-                if not overwrite and os.path.isfile(done_path):
-                    try:
-                        stored_count = int(open(done_path).read().strip())
-                        all_present = all(
-                            _page_valid(os.path.join(doc_dir, f'{i}.pdf'))
-                            for i in range(1, stored_count + 1)
-                        )
-                        if all_present:
-                            files_found += stored_count
-                            logging.debug(f'Complete, skipping: {filename}')
-                            continue
-                    except (ValueError, OSError):
-                        pass  # corrupted .done — fall through and re-download
+                if not overwrite:
+                    # Pages still in place and .done exists
+                    if os.path.isfile(done_path):
+                        try:
+                            stored_count = int(open(done_path).read().strip())
+                            all_present = all(
+                                _page_valid(os.path.join(doc_dir, f'{i}.pdf'))
+                                for i in range(1, stored_count + 1)
+                            )
+                            if all_present:
+                                files_found += stored_count
+                                logging.debug(f'Complete, skipping: {filename}')
+                                continue
+                        except (ValueError, OSError):
+                            pass  # corrupted .done — fall through and re-download
+
+                    # concat_pages.py already merged + archived doc_dir to _raw/
+                    merged_pdf = os.path.join(part_tmp, filename + '.pdf')
+                    if _page_valid(merged_pdf):
+                        logging.debug(f'Merged PDF exists, skipping: {merged_pdf}')
+                        continue
 
                 tqdm.write(f'  MO: {filename}  →  {doc_dir}')
 

@@ -1,16 +1,21 @@
 import subprocess
+import sys
 import time
 import argparse
 from datetime import datetime, timedelta
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+
 
 def run_script(script_name, extra_args=None):
     start_time = time.time()
-    cmd = ['python', script_name]
+    cmd = [sys.executable, str(_HERE / script_name)]
     if extra_args:
         cmd.extend(extra_args)
     subprocess.call(cmd)
-    end_time = time.time()
     print(f"{script_name} executed in {time.time() - start_time:.2f} seconds")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Orchestrates monitoruloficial.ro scrapers')

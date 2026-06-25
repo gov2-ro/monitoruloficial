@@ -1,15 +1,18 @@
 import datetime
 import logging
 import sys
+from pathlib import Path
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # ── Canonical constants ──────────────────────────────────────────────────────
-DATA_ROOT  = 'data/'
-DB_PATH    = DATA_ROOT + 'mo.db'
-HTML_CACHE = DATA_ROOT + 'html_cache/'
+# Anchored to repo root via __file__ so cron/VPS invocations work regardless of cwd.
+_REPO      = Path(__file__).resolve().parent.parent
+DATA_ROOT  = str(_REPO / 'data') + '/'
+DB_PATH    = str(_REPO / 'data' / 'mo.db')
+HTML_CACHE = str(_REPO / 'data' / 'html_cache') + '/'
 
 URL_BASE   = 'https://monitoruloficial.ro'
 URL_GET_MO = URL_BASE + '/ramo_customs/emonitor/get_mo.php'

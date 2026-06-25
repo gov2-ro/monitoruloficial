@@ -28,7 +28,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-sys.path.append("utils/")
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'utils'))
 from common import DATA_ROOT, setup_logging
 
 FLAT_PARTS = {"PI", "PII", "PIM", "PV"}

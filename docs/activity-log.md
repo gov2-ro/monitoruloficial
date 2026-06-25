@@ -35,6 +35,27 @@
 
 ## Debugging & fixes
 
+### 2026-06-25 — fix: fetch_p3+.py skips re-download after concat_pages archives to _raw/
+- `concat_pages.py` moves `doc_dir` → `data/<Px>_raw/…` after merging, taking the `.done` file
+  with it. On the next `fetch_p3+.py` run the `.done` check always missed → full re-download.
+- Fix: added a second skip condition — if the merged output PDF
+  (`data/<Px>/<year>/<date>/<name>.pdf`) exists and passes the PDF magic-byte check, skip
+  without any network I/O. The merged PDF is already the authoritative "done + merged" signal.
+
+### 2026-06-25 — VPS/cron readiness: anchor all paths to __file__
+- All paths were cwd-relative (`DATA_ROOT = 'data/'`, `sys.path.append("utils/")`), so cron
+  (which sets cwd to `$HOME` or `/`) silently broke every file open and import.
+- `utils/common.py`: `DATA_ROOT`, `DB_PATH`, `HTML_CACHE` now derived from
+  `Path(__file__).resolve().parent.parent` — absolute regardless of cwd.
+- All scripts (`get_index.py`, `fetch_p3+.py`, `fetch_pdfs.py`, `concat_pages.py`,
+  `convert.py`): `sys.path.append("utils/")` → `sys.path.insert(0, Path(__file__).resolve().parent / 'utils')`.
+- `main.py`: `'python'` → `sys.executable` (avoids Python 2 / missing `python` on Linux);
+  script names resolved to absolute paths via `Path(__file__).resolve().parent / name`.
+- Smoke-tested all four scripts with `cd /tmp && python3 /abs/path/script.py --help` — all pass.
+- Updated `readme.md`: removed the "run from repo root" requirement.
+
+
+
 ### 2026-06-25 — fix: fetch_p3+.py logging + xmo alias corrected
 - Added `tqdm.write` to `fetch_p3+.py` to show each MO name and destination folder at normal log level (was `logging.debug`, invisible unless `--debug`).
 - Diagnosed why `xmo` alias was processing 233 days of stale 2025 data instead of the current 10-day window: `--start_date 2025-07-18` had been placed on `fetch_p3+.py` by mistake — it was intended for `fetch_pdfs.py`. Since Parts III–VII are only available for 10 days from publication, running `fetch_p3+.py` with an old start date wastes time hitting the site for unavailable content.

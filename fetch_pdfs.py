@@ -2,7 +2,7 @@ import sqlite3, json, sys, os, time, random, argparse, logging, urllib3
 from tqdm import tqdm
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-sys.path.append("utils/")
+sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent / 'utils'))
 from common import (
     base_headers, section_dir, setup_logging, make_session,
     is_pdf, DB_PATH, TABLE_NAME, SHY_PARTS, URL_BASE, DATA_ROOT,

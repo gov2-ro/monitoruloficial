@@ -2,9 +2,10 @@
 
 scrape [monitoruloficial.ro/e-monitor](https://monitoruloficial.ro/e-monitor/) → save pdfs → get text → make nice / explorable.
 
-This repo was extracted from a larger monorepo into a standalone repo. Everything is now
-repo-root–relative, so **always run scripts from the repo root** (not from a subdirectory):
-imports (`sys.path.append("utils/")`) and data paths (`data/...`) depend on it.
+This repo was extracted from a larger monorepo into a standalone repo. Scripts use
+`__file__`-relative paths for both imports (`utils/`) and data (`data/`), so **cwd does not
+matter** — you can invoke them from anywhere, including via cron. The old advice to run from
+the repo root is no longer required.
 
 ## Usage
 
@@ -107,7 +108,7 @@ concatenation (roadmap). `<Px>` is one of `PI`, `PII`, `PIII`, `PIV`, `PV`, `PVI
 - Rate limiting everywhere: random sleeps between requests + a longer pause every N items.
   Pacing constants live in `utils/common.py` (`PACE`, `PACE_PAGE`).
 - `urllib3.disable_warnings(...)` + `verify=False` throughout — the site has SSL issues.
-- `get_index.py` and `fetch_p3+.py` end with `os.system('say -v ioana ...')` — a macOS-only
+- `get_index.py`, `fetch_p3+.py`, and `convert.py` end with `os.system('say -v ioana ...')` — a macOS-only
   spoken "done" announcement, guarded by `sys.platform == 'darwin'`.
 - `fetch_p3+.py` writes a `<name>.done` file (containing the page count) only after all pages
   download successfully. This is the resumability marker: a partial download is re-attempted

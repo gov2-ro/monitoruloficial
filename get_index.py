@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-sys.path.append("utils/")
+sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent / 'utils'))
 from common import (
     generate_dates, base_headers, parse_date, make_session,
     setup_logging, DB_PATH, HTML_CACHE, TABLE_NAME, URL_GET_MO,

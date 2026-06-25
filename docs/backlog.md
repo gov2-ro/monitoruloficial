@@ -9,6 +9,7 @@
 
 - [ ] **`main.py` — single-command pipeline** — update `main.py` to orchestrate the full workflow in sequence: `fetch_p3+.py` (download per-page PDFs) → `concat_pages.py` (merge + archive to `_raw/`) → `convert.py` (PDF → Markdown). Should accept the same date-range flags as the individual scripts and short-circuit cleanly if a step produces no new files.
 - [ ] **run on VPS** - prepare for cron
+- [ ] **VPN rotation on rate-limit** — when consecutive request failures exceed a threshold, reconnect via NordVPN or ProtonVPN CLI to get a new egress IP before retrying. ProtonVPN: `protonvpn-cli c --sc`; NordVPN: `nordvpn connect`. Hook into the per-script failure breaker in `fetch_p3+.py` or a shared wrapper in `common.py`.
 
 ## PDF pipeline
 

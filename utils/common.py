@@ -1,6 +1,10 @@
 import datetime
+import json
 import logging
+import logging.handlers
+import sqlite3
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -13,6 +17,8 @@ _REPO      = Path(__file__).resolve().parent.parent
 DATA_ROOT  = str(_REPO / 'data') + '/'
 DB_PATH    = str(_REPO / 'data' / 'mo.db')
 HTML_CACHE = str(_REPO / 'data' / 'html_cache') + '/'
+LOG_DIR    = _REPO / 'data' / 'logs'
+LOG_PATH   = str(LOG_DIR / 'mof.log')
 
 URL_BASE   = 'https://monitoruloficial.ro'
 URL_GET_MO = URL_BASE + '/ramo_customs/emonitor/get_mo.php'
@@ -94,13 +100,68 @@ def setup_logging(debug: bool = False, logfile: str = None) -> None:
     level = logging.DEBUG if debug else logging.INFO
     handlers = [logging.StreamHandler()]
     if logfile:
-        handlers.append(logging.FileHandler(logfile))
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        rh = logging.handlers.RotatingFileHandler(
+            logfile, maxBytes=5 * 1024 * 1024, backupCount=10, encoding='utf-8'
+        )
+        handlers.append(rh)
     logging.basicConfig(
         level=level,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=handlers,
         force=True,
     )
+
+
+# ── Run tracking (writes to runs table in mo.db) ─────────────────────────────
+
+def init_runs_table(conn: sqlite3.Connection) -> None:
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS runs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            script      TEXT    NOT NULL,
+            started_at  TEXT    NOT NULL,
+            finished_at TEXT,
+            duration_s  REAL,
+            status      TEXT,
+            stats       TEXT
+        )
+    ''')
+    conn.commit()
+
+
+def log_run_start(conn: sqlite3.Connection, script: str) -> int:
+    cur = conn.execute(
+        'INSERT INTO runs (script, started_at) VALUES (?, ?)',
+        (script, datetime.datetime.now().isoformat(timespec='seconds')),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def log_run_end(conn: sqlite3.Connection, run_id: int, status: str, stats: dict) -> None:
+    conn.execute(
+        'UPDATE runs SET finished_at=?, duration_s=?, status=?, stats=? WHERE id=?',
+        (
+            datetime.datetime.now().isoformat(timespec='seconds'),
+            _run_duration(conn, run_id),
+            status,
+            json.dumps(stats, ensure_ascii=False),
+            run_id,
+        ),
+    )
+    conn.commit()
+
+
+def _run_duration(conn: sqlite3.Connection, run_id: int) -> float:
+    row = conn.execute('SELECT started_at FROM runs WHERE id=?', (run_id,)).fetchone()
+    if not row:
+        return 0.0
+    try:
+        started = datetime.datetime.fromisoformat(row[0])
+        return round((datetime.datetime.now() - started).total_seconds(), 2)
+    except ValueError:
+        return 0.0
 
 
 def base_headers(which: str = 'headers1') -> dict:

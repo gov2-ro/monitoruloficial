@@ -40,7 +40,7 @@ CLI flags are **per-script**:
 |---|---|
 | `get_index.py` | `-start` `-end` `--overwrite/--no-overwrite` `-m/--mode` `--debug` |
 | `fetch_p3+.py` | `-start` `-end` `-days` `--overwrite/--no-overwrite` `-m/--mode` `--debug` |
-| `fetch_pdfs.py` | `--debug` |
+| `fetch_pdfs.py` | `-start` `-end` `--debug` |
 | `concat_pages.py` | `[root]` `--dry-run` `--overwrite/--no-overwrite` `--debug` |
 | `convert.py` | `-s/--sections` `--dry-run` `--overwrite/--no-overwrite` `-w/--workers` `--debug` |
 | `main.py` | `-start` only |
@@ -56,9 +56,10 @@ Two tiers: build a per-day index of available parts, then download the PDFs for 
   returned HTML (`div.card-body` → `ol.breadcrumb` section name + `a.btn` links), and upserts one
   row per day into SQLite. Also writes a prettified HTML snapshot per day to
   `data/html_cache/<date>.html`. Skips days already in the DB unless `--overwrite`.
-- **`fetch_pdfs.py`** — reads every DB row and downloads the **persistent** parts (Part I/II etc.)
-  into `data/pdfs/<year>/`, skipping files that already exist. Always processes all rows
-  newest-first; configure via the variables at the top of the file.
+- **`fetch_pdfs.py`** — reads DB rows and downloads the **persistent** parts (Parts I, II, PIM, V)
+  into `data/<Px>/<year>/`, skipping files that already exist. Accepts `-start`/`-end` to scope
+  by date (e.g. `-start 2011-01-01` skips pre-2011 rows that have no PDFs on the server);
+  without flags, processes all rows newest-first.
 - **`fetch_p3+.py`** — downloads only the **ephemeral** parts (`shy_parts` =
   `["III-a","IV-a","VI-a","VII-a"]`, online ~10 days). Multi-step per part: scrape `var fid` from
   the part page → POST `gidf.php` for page count + folder → download each page as a separate PDF
@@ -130,6 +131,40 @@ toolbench/         maintenance one-offs (e.g. cleanup-p3folder.py)
 docs/              backlog.md / activity-log.md
 data/              gitignored: mo.db, html_cache/, PI/ PII/ PIII/ … PVII/, text/
 ```
+
+## Monitoring
+
+All scripts write timestamped log entries to `data/logs/mof.log` (5 MB rotating, 10 backups).
+Each run is also recorded in the `runs` table of `mo.db`.
+
+Check recent run history:
+```bash
+python stats.py            # last 20 runs, all scripts
+python stats.py --last 50
+python stats.py --script fetch_p3+.py
+```
+
+Status icons: `✓` ok · `~` partial (some errors) · `✗` error (crash)
+
+## VPS setup
+
+1. Clone the repo on the VPS.
+2. Copy the index DB from local (one-time — the DB holds all PDF URLs, ~6 MB):
+   ```bash
+   rsync -avz data/mo.db user@vps:/path/to/repo/data/
+   ```
+3. Run `fetch_pdfs.py` to download all missing PI/PII PDFs. Use `-start 2011-01-01` to skip the pre-2011 rows that have no PDFs on the server:
+   ```bash
+   python fetch_pdfs.py -start 2011-01-01
+   ```
+   Already-existing files are skipped automatically; safe to re-run at any time to fill gaps.
+4. Run `fetch_p3+.py` for ephemeral parts (Parts III–VII are only online for ~10 days):
+   ```bash
+   python fetch_p3+.py   # defaults to last 10 days
+   ```
+5. Set up cron (see crontab entries in `docs/`).
+
+**Do not commit `mo.db` to git** — each machine's cron updates it independently. Committing it produces constant binary-file merge conflicts. Use `rsync` for the initial copy; cron keeps it current on the VPS.
 
 ## Roadmap
 

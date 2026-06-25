@@ -20,6 +20,7 @@ import argparse
 import logging
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -29,7 +30,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'utils'))
-from common import DATA_ROOT, setup_logging
+from common import DATA_ROOT, setup_logging, DB_PATH, LOG_PATH, init_runs_table, log_run_start, log_run_end
 
 FLAT_PARTS = {"PI", "PII", "PIM", "PV"}
 DEEP_PARTS = {"PIII", "PIV", "PVI", "PVII"}
@@ -203,16 +204,24 @@ def main():
     parser.add_argument('--debug', action='store_true', help='verbose debug logging')
     args = parser.parse_args()
 
-    setup_logging(args.debug)
+    setup_logging(args.debug, logfile=LOG_PATH)
+
+    db_conn = sqlite3.connect(DB_PATH)
+    init_runs_table(db_conn)
+    run_id = log_run_start(db_conn, 'convert.py')
 
     root = Path(DATA_ROOT)
     if not root.is_dir():
         logging.error(f'Data root not found: {root}')
+        log_run_end(db_conn, run_id, 'error', {})
+        db_conn.close()
         raise SystemExit(1)
 
     pdfs = find_pdfs(root, args.sections)
     if not pdfs:
-        print('No PDFs found.')
+        logging.info('No PDFs found.')
+        log_run_end(db_conn, run_id, 'ok', {'converted': 0, 'existed': 0, 'failed': 0})
+        db_conn.close()
         return
 
     logging.info(f'{len(pdfs)} PDFs found across sections: {", ".join(args.sections)}')
@@ -235,10 +244,14 @@ def main():
                 else:
                     failed += 1
 
+    run_status = 'ok' if failed == 0 else 'partial'
+    log_run_end(db_conn, run_id, run_status, {'converted': converted, 'existed': exists, 'failed': failed})
+    db_conn.close()
+
     if args.dry_run:
-        print(f'Dry-run: {would} would convert  {exists} already exist  {failed} would skip/fail')
+        logging.info(f'Dry-run: {would} would convert  {exists} already exist  {failed} would skip/fail')
     else:
-        print(f'Done: {converted} converted  {exists} already existed  {failed} failed')
+        logging.info(f'Done: {converted} converted  {exists} already existed  {failed} failed')
 
     if sys.platform == 'darwin':
         total = converted or would
@@ -246,4 +259,10 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        logging.exception(f'Unhandled error: {e}')
+        raise SystemExit(1)

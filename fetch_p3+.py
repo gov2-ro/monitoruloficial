@@ -10,6 +10,7 @@ from common import (
     is_pdf, pdf_ok, setup_logging,
     DATA_ROOT, DB_PATH, TABLE_NAME, URL_BASE, URL_GIDF, URL_VIEW,
     SHY_PARTS, PACE, PACE_PAGE,
+    LOG_PATH, init_runs_table, log_run_start, log_run_end,
 )
 
 """
@@ -35,7 +36,7 @@ def main():
     parser.add_argument('--debug', action='store_true', help='verbose debug logging')
     args = parser.parse_args()
 
-    setup_logging(args.debug)
+    setup_logging(args.debug, logfile=LOG_PATH)
 
     start_dt = datetime.today() - timedelta(days=10)
     end_dt   = datetime.today()
@@ -66,6 +67,8 @@ def main():
 
     conn = sqlite3.connect(DB_PATH)
     c    = conn.cursor()
+    init_runs_table(conn)
+    run_id = log_run_start(conn, 'fetch_p3+.py')
     c.execute(
         f'SELECT * FROM {TABLE_NAME} WHERE date BETWEEN ? AND ?',
         (start_dt.strftime('%Y-%m-%d'), end_dt.strftime('%Y-%m-%d')),
@@ -75,6 +78,7 @@ def main():
     tqdm.write(f' > {len(rows)} days in the DB')
     all_files = 0
     files_found = 0
+    errors = 0
     consecutive_failures = 0
 
     session = make_session()
@@ -85,6 +89,7 @@ def main():
             json_dict = json.loads(json_str)
         except json.JSONDecodeError as e:
             logging.error(f'JSON decode error for {date}: {e}')
+            errors += 1
             continue
 
         for sectiune, parti in tqdm(json_dict.items(), desc='părți', leave=False):
@@ -141,6 +146,7 @@ def main():
                                            verify=False, timeout=timeout)
                 except Exception as e:
                     logging.error(f'GET {URL_BASE + url}: {e}')
+                    errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
                         tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
@@ -150,6 +156,7 @@ def main():
 
                 if response.status_code != 200:
                     logging.warning(f'HTTP {response.status_code} for {URL_BASE + url}')
+                    errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
                         tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
@@ -185,6 +192,7 @@ def main():
                                             data=data, verify=False, timeout=timeout)
                 except Exception as e:
                     logging.error(f'POST gidf (fid={fid_value}): {e}')
+                    errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
                         tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
@@ -194,6 +202,7 @@ def main():
 
                 if response.status_code != 200:
                     logging.warning(f'gidf HTTP {response.status_code} (fid={fid_value})')
+                    errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
                         tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
@@ -209,6 +218,7 @@ def main():
                         f'Bad gidf response (fid={fid_value}): {e}; '
                         f'body[:120]={response.text[:120]!r}'
                     )
+                    errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
                         tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
@@ -300,8 +310,12 @@ def main():
                     if files_found:
                         tqdm.write(f'Files found (skipped): {files_found}')
 
+    status = 'ok' if errors == 0 else 'partial'
+    log_run_end(conn, run_id, status, {
+        'days': len(rows), 'pages_saved': all_files, 'skipped': files_found, 'errors': errors,
+    })
     conn.close()
-    tqdm.write(f'Done: {len(rows)} days, {all_files} pages saved, {files_found} skipped')
+    logging.info(f'Done: {len(rows)} days, {all_files} pages saved, {files_found} skipped, {errors} errors')
     if sys.platform == 'darwin':
         os.system(f'say -v ioana "în sfârșit, am gătat {all_files} fișiere " -r 250')
 
@@ -318,4 +332,10 @@ def _page_valid(path: str) -> bool:
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        logging.exception(f'Unhandled error: {e}')
+        raise SystemExit(1)

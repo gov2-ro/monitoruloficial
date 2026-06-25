@@ -8,6 +8,7 @@ sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent / '
 from common import (
     generate_dates, base_headers, parse_date, make_session,
     setup_logging, DB_PATH, HTML_CACHE, TABLE_NAME, URL_GET_MO,
+    LOG_PATH, init_runs_table, log_run_start, log_run_end,
 )
 
 
@@ -22,7 +23,7 @@ def main():
     parser.add_argument('--debug', action='store_true', help='verbose debug logging')
     args = parser.parse_args()
 
-    setup_logging(args.debug)
+    setup_logging(args.debug, logfile=LOG_PATH)
 
     start_dt = parse_date(args.start_date) if args.start_date else datetime.today() - timedelta(days=15)
     end_dt   = parse_date(args.end_date)   if args.end_date   else datetime.today()
@@ -55,6 +56,8 @@ def main():
     c = conn.cursor()
     c.execute(f'CREATE TABLE IF NOT EXISTS {TABLE_NAME} '
               '("date" TEXT, "json" TEXT, PRIMARY KEY("date"))')
+    init_runs_table(conn)
+    run_id = log_run_start(conn, 'get_index.py')
 
     logging.info(f'Range: {start_dt:%Y-%m-%d} → {end_dt:%Y-%m-%d}')
     if overwrite:
@@ -72,6 +75,7 @@ def main():
     logging.info(f'Processing {len(zidates)} days')
     session = make_session()
     ii = 0
+    errors = 0
 
     for oneday in tqdm(zidates):
         data = {'today': oneday, 'rand': random.random()}
@@ -80,6 +84,7 @@ def main():
                                     data=data, verify=False, timeout=30)
         except Exception as e:
             logging.error(f'Request failed for {oneday}: {e}')
+            errors += 1
             continue
 
         try:
@@ -94,6 +99,7 @@ def main():
                 json_data[key] = value
         except Exception as e:
             logging.error(f'Parse error for {oneday}: {e}')
+            errors += 1
             continue
 
         if save_to_cache:
@@ -119,11 +125,19 @@ def main():
         if ii % pause_at == 0:
             time.sleep(pause)
 
+    status = 'ok' if errors == 0 else 'partial'
+    log_run_end(conn, run_id, status, {'days_saved': ii, 'errors': errors})
     conn.close()
-    tqdm.write(f'{ii} days saved to DB')
+    logging.info(f'{ii} days saved to DB (errors: {errors})')
     if sys.platform == 'darwin':
         os.system(f'say -v ioana "în sfârșit, am gătat {ii} zile " -r 250')
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        logging.exception(f'Unhandled error: {e}')
+        raise SystemExit(1)

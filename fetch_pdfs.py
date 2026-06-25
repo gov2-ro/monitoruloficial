@@ -1,4 +1,5 @@
 import sqlite3, json, sys, os, time, random, argparse, logging, urllib3
+from datetime import datetime
 from tqdm import tqdm
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -6,15 +7,13 @@ sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent / '
 from common import (
     base_headers, section_dir, setup_logging, make_session,
     is_pdf, DB_PATH, TABLE_NAME, SHY_PARTS, URL_BASE, DATA_ROOT,
+    LOG_PATH, init_runs_table, log_run_start, log_run_end,
 )
 
 """
 Download persistent Parts I, II, V (and PIM) PDFs from the day index.
 Ephemeral parts (III-a, IV-a, VI-a, VII-a) are handled by fetch_p3+.py.
-Configure by editing the variables below or passing CLI flags.
 """
-
-logfile = DATA_ROOT + 'fetch_pdfs.log'
 
 
 def fetch_pdf(session, url_base, url, output_path, headers):
@@ -56,17 +55,31 @@ def fetch_pdf(session, url_base, url, output_path, headers):
 
 def main():
     parser = argparse.ArgumentParser(description='Download persistent Parts I/II PDFs')
+    parser.add_argument('-start', '--start_date', help='start date YYYY-MM-DD (default: all)')
+    parser.add_argument('-end',   '--end_date',   help='end date YYYY-MM-DD (default: today)')
     parser.add_argument('--debug', action='store_true', help='verbose debug logging')
     args = parser.parse_args()
 
-    setup_logging(args.debug, logfile=logfile)
+    setup_logging(args.debug, logfile=LOG_PATH)
 
     session = make_session()
+    downloaded = skipped = errors = 0
 
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute(f'SELECT * FROM {TABLE_NAME} ORDER BY date DESC')
+        init_runs_table(conn)
+        run_id = log_run_start(conn, 'fetch_pdfs.py')
+        if args.start_date or args.end_date:
+            start = args.start_date or '2000-01-01'
+            end   = args.end_date   or datetime.today().strftime('%Y-%m-%d')
+            c.execute(
+                f'SELECT * FROM {TABLE_NAME} WHERE date BETWEEN ? AND ? ORDER BY date DESC',
+                (start, end),
+            )
+            logging.info(f'Filtering to date range: {start} → {end}')
+        else:
+            c.execute(f'SELECT * FROM {TABLE_NAME} ORDER BY date DESC')
         rows = c.fetchall()
         logging.info(f'Found {len(rows)} days in DB')
 
@@ -96,19 +109,28 @@ def main():
 
                         if os.path.isfile(output_path):
                             logging.debug(f'Exists, skipping: {output_path}')
+                            skipped += 1
                             continue
 
                         if fetch_pdf(session, URL_BASE, url, output_path, base_headers('headers2')):
+                            downloaded += 1
                             time.sleep(random.uniform(2.0, 4.0))
                         else:
+                            errors += 1
                             time.sleep(random.uniform(5.0, 8.0))
 
             except json.JSONDecodeError as e:
                 logging.error(f'JSON decode error for {date}: {e}')
+                errors += 1
                 continue
             except Exception as e:
                 logging.error(f'Error processing {date}: {e}')
+                errors += 1
                 continue
+
+        status = 'ok' if errors == 0 else 'partial'
+        log_run_end(conn, run_id, status, {'downloaded': downloaded, 'skipped': skipped, 'errors': errors})
+        logging.info(f'Done: {downloaded} downloaded  {skipped} skipped  {errors} errors')
 
     except sqlite3.Error as e:
         logging.error(f'Database error: {e}')
@@ -117,4 +139,10 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        logging.exception(f'Unhandled error: {e}')
+        raise SystemExit(1)

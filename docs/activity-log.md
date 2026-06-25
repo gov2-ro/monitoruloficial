@@ -1,5 +1,18 @@
 # Activity Log
 
+## Observability / monitoring
+
+### 2026-06-26 — Logging, run tracking, stats dashboard
+
+- Added `LOG_DIR` / `LOG_PATH` constants to `utils/common.py`; upgraded `setup_logging()` to use `RotatingFileHandler` (5 MB, 10 backups) when a log file is requested. All scripts now call `setup_logging(logfile=LOG_PATH)` so every cron invocation writes timestamped entries to `data/logs/mof.log`.
+- Added `runs` table to `mo.db` with helpers `init_runs_table`, `log_run_start`, `log_run_end` in `common.py`. Each script records started/finished timestamps, duration, status (`ok`/`partial`/`error`), and a JSON stats blob (script-specific counters like `days_saved`, `pages_saved`, `downloaded`, etc.).
+- Replaced final `print()` summary calls in `concat_pages.py` and `convert.py` with `logging.info()` so summaries appear in the log file.
+- Added `__main__` error wrappers (`try/except SystemExit`) to all scripts so unhandled crashes are logged with a traceback rather than silently eaten by cron.
+- New `stats.py`: prints a quick aligned table of recent runs from the DB. `python stats.py --last N --script NAME`.
+- Added VPN rotation backlog item (NordVPN/ProtonVPN CLI fallback on consecutive failures).
+- Added `-start`/`-end` date-range flags to `fetch_pdfs.py` (previously scanned all 6,892 DB rows unconditionally). Useful for VPS bootstrap (`-start 2011-01-01` skips the pre-2011 rows that have no PDFs on the server) and for scoped daily cron runs.
+- Added VPS bootstrap guide to `readme.md`: rsync `mo.db` once, then run `fetch_pdfs.py -start 2011-01-01` to fill in PI/PII. Decision: **do not commit `mo.db`** — each machine's cron updates it independently, committing it produces constant binary merge conflicts.
+
 ## Scrapers / data layout
 
 ### 2026-06-25 — Per-part PDF output folders (PI, PII, PIII…)

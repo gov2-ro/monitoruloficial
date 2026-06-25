@@ -22,13 +22,14 @@ import argparse
 import logging
 import os
 import shutil
+import sqlite3
 import sys
 from pathlib import Path
 
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'utils'))
-from common import is_pdf, setup_logging, DATA_ROOT
+from common import is_pdf, setup_logging, DATA_ROOT, DB_PATH, LOG_PATH, init_runs_table, log_run_start, log_run_end
 
 try:
     from pypdf import PdfWriter, PdfReader
@@ -124,7 +125,11 @@ def main():
     parser.add_argument('--debug', action='store_true', help='verbose debug logging')
     args = parser.parse_args()
 
-    setup_logging(args.debug)
+    setup_logging(args.debug, logfile=LOG_PATH)
+
+    db_conn = sqlite3.connect(DB_PATH)
+    init_runs_table(db_conn)
+    run_id = log_run_start(db_conn, 'concat_pages.py')
 
     root = Path(args.root)
     if not root.is_dir():
@@ -183,9 +188,18 @@ def main():
         else:
             failed += 1
 
+    status = 'ok' if failed == 0 else 'partial'
+    log_run_end(db_conn, run_id, status, {'merged': merged, 'skipped': skipped, 'failed': failed})
+    db_conn.close()
     label = '[dry-run] Would merge' if args.dry_run else 'Merged'
-    print(f'{label}: {merged}  skipped: {skipped}  failed: {failed}')
+    logging.info(f'{label}: {merged}  skipped: {skipped}  failed: {failed}')
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        logging.exception(f'Unhandled error: {e}')
+        raise SystemExit(1)

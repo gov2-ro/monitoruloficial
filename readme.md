@@ -6,6 +6,7 @@ scrape [monitoruloficial.ro/e-monitor](https://monitoruloficial.ro/e-monitor/) �
     - [x] fetch daily părți
     - [x] download pdfs
     - [x] fetch P-III - P-VII (online for 10 days)
+        - [ ] bypass rate limiting, rotating proxies or VPN
         - [x] fetch individual pages
         - [x] fetch jsonp's
         - [ ] concatenate pdfs
@@ -40,3 +41,4 @@ see also [pdf2text](../pdf2text) conversion tests
 | [lege-online.ro](https://www.lege-online.ro/monitoare-oficiale) |  |  |
 | [lege5.ro](https://lege5.ro/App/MonitorOficial) | formatted, linked | paid |
 | [idrept.ro](https://lege5.ro/App/MonitorOficial) | formatted, linked | paid |
+| [monitorul.ai](https://monitorul.ai/) | Partea a II-a. MCP included |  |

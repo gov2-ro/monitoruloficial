@@ -162,7 +162,7 @@ Status icons: `✓` ok · `~` partial (some errors) · `✗` error (crash)
    ```bash
    python fetch_p3+.py   # defaults to last 10 days
    ```
-5. Set up cron (see crontab entries in `docs/`).
+5. Set up cron — copy and adapt `docs/crontab.example`.
 
 **Do not commit `mo.db` to git** — each machine's cron updates it independently. Committing it produces constant binary-file merge conflicts. Use `rsync` for the initial copy; cron keeps it current on the VPS.
 

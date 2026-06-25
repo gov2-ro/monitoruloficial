@@ -1,0 +1,43 @@
+# crontab.example — monitoruloficial.ro scraper
+#
+# Install on VPS:
+#   crontab -e
+#   paste / adapt the entries below
+#
+# All scripts use __file__-relative paths, so cwd doesn't matter.
+# Edit REPO and PYTHON to match your VPS environment.
+#
+# Check your Python path:  which python3
+# Check your repo path:     realpath /path/to/repo
+
+REPO=/path/to/monitoruloficial
+PYTHON=/usr/bin/python3
+
+# ── Twice-daily pipeline: index + ephemeral PDFs (Parts III–VII) ─────────────
+# Runs at 10:00 and 22:00, Mon–Fri (gazette is only published on weekdays).
+# main.py orchestrates: get_index.py → fetch_p3+.py
+# Scripts log to $REPO/data/logs/mof.log; redirect cron stdout to /dev/null.
+
+0 10,22 * * 1-5  $PYTHON $REPO/main.py >> /dev/null 2>&1
+
+# ── Persistent PDFs (Parts I, II, PIM, V) ────────────────────────────────────
+# Run once daily; only downloads what's missing (idempotent).
+# On first run after VPS setup, add -start 2011-01-01 to skip empty pre-2011 rows.
+
+30 10    * * 1-5  $PYTHON $REPO/fetch_pdfs.py >> /dev/null 2>&1
+
+# ── Merge per-page PDFs into single documents ─────────────────────────────────
+# Run after fetch_p3+.py has finished (offset by ~15 min to be safe).
+
+15 10,22 * * 1-5  $PYTHON $REPO/concat_pages.py >> /dev/null 2>&1
+
+# ── Optional: convert PDFs → Markdown ────────────────────────────────────────
+# CPU-intensive; run once daily at a quiet time.
+# Remove or comment out if text extraction isn't needed yet.
+
+0 23     * * 1-5  $PYTHON $REPO/convert.py >> /dev/null 2>&1
+
+# ── Notes ─────────────────────────────────────────────────────────────────────
+# Monitor runs:     python $REPO/stats.py
+# Tail logs:        tail -f $REPO/data/logs/mof.log
+# Check cron mail:  sudo journalctl -u cron (systemd) or /var/mail/$USER

@@ -5,6 +5,11 @@
 - [ ] bypass rate limiting, rotating proxies or VPN
 - [ ] OCR needed pages. is there any?
 
+## Orchestration
+
+- [ ] **`main.py` — single-command pipeline** — update `main.py` to orchestrate the full workflow in sequence: `fetch_p3+.py` (download per-page PDFs) → `concat_pages.py` (merge + archive to `_raw/`) → `convert.py` (PDF → Markdown). Should accept the same date-range flags as the individual scripts and short-circuit cleanly if a step produces no new files.
+- [ ] **run on VPS** - prepare for cron
+
 ## PDF pipeline
 
 - [ ] **Add `pypdf` to dependency list** — `concat_pages.py` requires it (`pip install pypdf`). Also consider `pypdf` as a drop-in replacement for the deprecated `PyPDF2` used in `mof-convert-txt.py`.
@@ -17,10 +22,13 @@
 - [x] **`convert.py` — PDF → Markdown batch converter** — implemented 2026-06-25. pdftotext, sibling `.md` output, YAML frontmatter, header/pagenum cleanup, ThreadPoolExecutor. Note: PV "PDFs" are actually HTML responses (not real PDFs); pdftotext rejects them — PV conversion will fail until re-downloaded correctly.
 - [ ] **SQLite FTS5 indexing** — index `.md` content from `convert.py` into an FTS5 table in `mo.db` for full-text search (zero extra infrastructure).
 - [ ] **PV section re-download** — `data/PV/` files are HTML (not PDFs); `pdf_ok()` check was not enforced on download. Re-fetch these 12 files using the correct PDF URL and re-run `convert.py -s PV`.
+- [ ] **Consolidate `_raw` dirs into `data/raw/P*/`** — currently per-section raw dirs land as `data/PIII_raw/`, `data/PIV_raw/`, etc. Cleaner to mirror under `data/raw/PIII/`, `data/raw/PIV/`, etc. so the whole raw tree is deletable with `rm -rf data/raw/`. Requires updating `_raw_dest()` in `concat_pages.py` and migrating any existing `data/*_raw/` dirs.
+- [ ] **`fetch_p3+.py` should write per-page PDFs into `data/raw/P*/`** — currently `fetch_p3+.py` downloads directly into `data/P*/` (the final output location). It should instead save per-page PDFs into `data/raw/P*/` (a staging area), then `concat_pages.py` merges them into `data/P*/` as today. Mirrors the pattern that `concat_pages.py` already establishes when it archives source pages to `_raw/` after a merge. Makes the distinction between raw downloads and merged outputs explicit in the directory tree and aligns with the `data/raw/` consolidation above.
 - [ ] PDF → structured text/HTML — see [pdf2txt.xlsx](https://docs.google.com/spreadsheets/d/1APEmulzWa7PGgDg_mc-7rnY_vbxX2Q6Y)
 - [ ] Split into chapters → initial UI
 - [ ] NLP, detect entities
 - [ ] text extraction should be used for both analysis and rendering of PDFs as HTML - reconstructing layout, pagination and columns (but responsive).
+
 
 ## Phase 2: Analysis & UI
 
@@ -31,5 +39,5 @@
 ## Misc Analysis/UI Ideas
 - MO browser with entity detection. 
 - index by entity / views / themed profiles?
-- MO ELI5/TL;DR version. MO Daily
+- MO ELI5/TL;DR version. MO Daily. Create TOC for each MO.
 

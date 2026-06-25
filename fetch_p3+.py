@@ -20,9 +20,16 @@ TODO: split by dates
 
 db_filename     =   'data/mo.db'
 table_name      =   'dates_lists'
-output_folder   =   'data/pdfs/_p3+/'
-tmp_folder      =   'data/pdfs/_p3+/tmp/'
+pdfs_root       =   'data/'
 verbose         =   False
+PART_FOLDER     =   {"III-a": "PIII", "IV-a": "PIV", "VI-a": "PVI", "VII-a": "PVII"}
+
+def section_dir(sectiune):
+    for key, folder in PART_FOLDER.items():
+        if key in sectiune:
+            return folder
+    return "P_unknown"
+
 overwrite       =   False   # if false check if file exists, don't fetch again
 pause_at        =   30      # days
 pause           =   10      # seconds
@@ -116,28 +123,22 @@ for row in tqdm(rows, desc='days'):
             year=urlparts[-1]
             if len(year) != 4:
                 tqdm.write('err: ' + str(year))
-            
+
+            part_out = os.path.join(pdfs_root, section_dir(sectiune), str(year))
+            part_tmp = os.path.join(pdfs_root, section_dir(sectiune), str(year), date)
+
             if str(year) != str(prev_year):
                 tqdm.write(f" -- current year: " + str(year) + " -", end="\r")
-                # check if folder exists, cread if not, print.
-                if not os.path.exists(output_folder + str(year) ):
-                    os.makedirs(output_folder + str(year))
-                    # tqdm.write(f"created " + str(year) + " folder", end="\r")
-                    tqdm.write("created " + str(year) + " folder")
-            
-            # if not os.path.exists(tmp_folder + filename ):
-            #         os.makedirs(tmp_folder + filename )
-            #         # tqdm.write(f"created " + str(year) + " folder", end="\r")
-            #         tqdm.write("created " + tmp_folder + filename  + " folder")
-
-            # FIXME: if file exists don't overwrite?
+                if not os.path.exists(part_out):
+                    os.makedirs(part_out)
+                    tqdm.write("created " + part_out)
 
             prev_year = year
 
             if verbose:
                 tqdm.write('>> ' + url_base + url)
 
-            if overwrite is False and os.path.isfile(output_folder + str(year) + '/' + filename + '.pdf'):
+            if overwrite is False and os.path.isfile(os.path.join(part_out, filename + '.pdf')):
                 files_found += 1
                 if verbose:
                     tqdm.write('skipping ' + date + '/' + filename + '.pdf');
@@ -206,12 +207,9 @@ for row in tqdm(rows, desc='days'):
                 continue
             ziurl_jsonp = f"https://monitoruloficial.ro/ramo_customs/emonitor/showmo/services/view.php?doc={gidf_json['d']}&format=jsonp&subfolder={gidf_json['f']}&page=10"
             
-            if not os.path.isdir(tmp_folder + date ):
-                os.makedirs(tmp_folder + date )
-            if not os.path.isdir(tmp_folder + date + '/' + filename):
-                os.makedirs(tmp_folder + date + '/' + filename)
+            os.makedirs(os.path.join(part_tmp, filename), exist_ok=True)
 
-            if overwrite is False and os.path.isfile(tmp_folder + date + '/' + filename + '/' + filename + '.json'):
+            if overwrite is False and os.path.isfile(os.path.join(part_tmp, filename, filename + '.json')):
                 tqdm.write('skipping ' + date + '/' + filename + '.json');
                 continue #if overwrite = False and file exists, continue
 
@@ -223,18 +221,19 @@ for row in tqdm(rows, desc='days'):
                 continue   # don't fall through and write the previous response's body
 
             try:
-                with open(tmp_folder + date + '/' + filename + '/' + filename + '.json', 'wb') as f:
-                    f.write(response.content) 
-                    tqdm.write(' >> ' + tmp_folder + date + '/' + filename + '/' + filename + '.json')       
+                json_path = os.path.join(part_tmp, filename, filename + '.json')
+                with open(json_path, 'wb') as f:
+                    f.write(response.content)
+                    tqdm.write(' >> ' + json_path)
             except Exception as e:
                 logging.error(f' > E172 > Error saving PDF URL : {e}')
 
             for i in range(1, gidf_json['p'] + 1):
                 ziurl = f"https://monitoruloficial.ro/ramo_customs/emonitor/showmo/services/view.php?doc={gidf_json['d']}&format=pdf&subfolder={gidf_json['f']}&page={i}"
-               
-                if overwrite is False and os.path.isfile(tmp_folder + date + '/' + filename + '/' + str(i) + '.pdf'):
+
+                page_path = os.path.join(part_tmp, filename, str(i) + '.pdf')
+                if overwrite is False and os.path.isfile(page_path):
                         files_found += 1
-                        # if verbose:
                         tqdm.write('skipping ' + date + '/' + filename + '.pdf');
                         continue #if overwrite = False and file exists, continue
 
@@ -246,10 +245,9 @@ for row in tqdm(rows, desc='days'):
                     continue   # skip this page rather than writing a stale/garbage PDF
 
                 try:
-                    # with open(output_folder + date + '.pdf', 'wb') as f:
-                    with open(tmp_folder + date + '/'  + filename + '/' + str(i) + '.pdf', 'wb') as f:
+                    with open(page_path, 'wb') as f:
                         f.write(response.content)
-                        all_files+=1        
+                        all_files+=1
                 except Exception as e:
                     logging.error(f'Error saving PDF URL : {e}')
             

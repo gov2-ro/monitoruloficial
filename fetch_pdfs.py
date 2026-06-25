@@ -4,9 +4,18 @@ default script worked but waits forever for large pdf, this shows pbar per each 
 rootFolder = 'data/'
 db_filename = rootFolder + 'mo.db'
 table_name = 'dates_lists'
-output_folder = rootFolder + 'pdfs/'
 url_base = 'https://monitoruloficial.ro'
 shy_parts = ["III-a", "IV-a", "VI-a", "VII-a"]
+PART_FOLDER = {
+    "Partea I":          "PI",
+    "Partea I Maghiară": "PIM",
+    "Partea a II-a":     "PII",
+    "Partea a III-a":    "PIII",
+    "Partea a IV-a":     "PIV",
+    "Partea a V-a":      "PV",
+    "Partea a VI-a":     "PVI",
+    "Partea a VII-a":    "PVII",
+}
 logfile=rootFolder + 'fetch_pdfs.log'
     
 import sqlite3, json, requests, sys, os, time, random
@@ -100,8 +109,6 @@ def fetch_pdf(url_base, url, output_path, headers):
 
 def main():
    
-    os.makedirs(output_folder, exist_ok=True)
-    
     try:
         conn = sqlite3.connect(db_filename)
         c = conn.cursor()
@@ -118,17 +125,19 @@ def main():
                 for sectiune, parti in tqdm(json_dict.items(), desc='părți', leave=False):
                     if any(part in sectiune for part in shy_parts):
                         continue
-                    
+
+                    part_key = PART_FOLDER.get(sectiune, 'P_unknown')
+
                     for nr, url in tqdm(parti.items(), desc='pdfs', leave=False):
                         filename = os.path.splitext(url[1:])[0]
                         urlparts = filename.split('--')
                         year = urlparts[-1]
-                        
+
                         if not year.isdigit() or len(year) != 4:
                             logging.error(f"Invalid year format: {year} in URL: {url}")
                             continue
-                        
-                        year_dir = os.path.join(output_folder, str(year))
+
+                        year_dir = os.path.join(rootFolder, part_key, str(year))
                         os.makedirs(year_dir, exist_ok=True)
                         output_path = os.path.join(year_dir, f"{filename}.pdf")
                         

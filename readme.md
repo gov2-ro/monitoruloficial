@@ -69,9 +69,10 @@ Imported as `from common import ...` (after `sys.path.append("utils/")`). Provid
 SQLite `data/mo.db`, table `dates_lists`: `date TEXT PRIMARY KEY`, `json TEXT`. The JSON maps each
 section name (e.g. `"Partea I"`) → `{ part-number: href }`.
 
-PDFs land under `data/pdfs/<year>/` (Part I/II) and `data/pdfs/_p3+/<year>/`, with `fetch_p3+.py`
-staging per-page downloads in `data/pdfs/_p3+/tmp/<date>/<filename>/`. The whole `data/` dir is
-gitignored.
+PDFs land under `data/<Px>/<year>/` for all parts. For the ephemeral parts (PIII, PIV, PVI,
+PVII), `fetch_p3+.py` stages per-page downloads in `data/<Px>/<year>/<date>/<filename>/` before
+concatenation (roadmap). `<Px>` is one of `PI`, `PII`, `PIII`, `PIV`, `PV`, `PVI`, `PVII`,
+`PIM` (Partea I Maghiară). The whole `data/` dir is gitignored.
 
 ### Conventions & gotchas
 
@@ -92,7 +93,7 @@ mof-convert-txt.py one-off PDF→markdown experiment
 utils/common.py    shared helpers
 toolbench/         maintenance one-offs (e.g. cleanup-p3folder.py)
 docs/              backlog.md / activity-log.md
-data/              gitignored: mo.db, html_cache/, pdfs/, text/
+data/              gitignored: mo.db, html_cache/, PI/ PII/ PIII/ … PVII/, text/
 ```
 
 ## Roadmap
@@ -118,6 +119,10 @@ data/              gitignored: mo.db, html_cache/, pdfs/, text/
 
 ## Proiecte similare
 
+[ciocan/monitorul.ai](https://github.com/ciocan/monitorul.ai), [ciocan/monitorul-ii](https://github.com/ciocan/monitorul-ii), [v-khdumi/MonitorulOficialPDF](https://github.com/v-khdumi/MonitorulOficialPDF)
+
+vezi și:
+
 | proiect | obs | price |
 |-----|-----|-----|
 | [monitoruljuridic.ro](http://www.monitoruljuridic.ro/) | no formatting | gratis |
@@ -125,4 +130,4 @@ data/              gitignored: mo.db, html_cache/, pdfs/, text/
 | [lege-online.ro](https://www.lege-online.ro/monitoare-oficiale) |  |  |
 | [lege5.ro](https://lege5.ro/App/MonitorOficial) | formatted, linked | paid |
 | [idrept.ro](https://lege5.ro/App/MonitorOficial) | formatted, linked | paid |
-| [monitorul.ai](https://monitorul.ai/) | Partea a II-a. MCP included |  |
+

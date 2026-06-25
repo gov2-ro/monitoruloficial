@@ -145,7 +145,7 @@ data/              gitignored: mo.db, html_cache/, PI/ PII/ PIII/ … PVII/, tex
 
 ## Proiecte similare
 
-[ciocan/monitorul.ai](https://github.com/ciocan/monitorul.ai) / [ciocan/monitorul-ii](https://github.com/ciocan/monitorul-ii), [v-khdumi/MonitorulOficialPDF](https://github.com/v-khdumi/MonitorulOficialPDF)
+[ciocan/monitorul-ii](https://github.com/ciocan/monitorul-ii), [Ansvar-Systems/Romanian-law-mcp](https://github.com/Ansvar-Systems/Romanian-law-mcp), [v-khdumi/MonitorulOficialPDF](https://github.com/v-khdumi/MonitorulOficialPDF)
 
 vezi și:
 

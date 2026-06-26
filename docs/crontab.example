@@ -1,53 +1,47 @@
-# crontab.example — monitoruloficial.ro scraper
+# crontab.example -- monitoruloficial.ro scraper
 #
-# Install on VPS:
-#   crontab -e
-#   paste / adapt the entries below
+# HOW TO INSTALL (safe -- doesn't overwrite existing entries):
+#   crontab -e          <- opens your existing crontab in $EDITOR
+#   append the lines below, save and quit
 #
-# All scripts use __file__-relative paths, so cwd doesn't matter.
-# Edit REPO and PYTHON to match your VPS environment.
+# Variable naming:
+#   Variables in crontab are GLOBAL to the whole file -- a bare PYTHON= or
+#   REPO= would collide with other projects. Use MO_* prefixes to be safe.
 #
-# Check your repo path:  realpath /path/to/repo
-#
-# ── Virtual environment ───────────────────────────────────────────────────────
-# Point PYTHON directly at the venv binary — do NOT use `source activate`.
-# `source` only works in interactive shells; cron runs /bin/sh with no profile.
-#
-# If using a venv at /path/to/venv:
-#   PYTHON=/path/to/venv/bin/python
-#
-# To find it on the VPS after creating/activating the venv:
-#   which python     (while venv is active)
-# ─────────────────────────────────────────────────────────────────────────────
+# Virtual environment:
+#   Point MO_PYTHON directly at the venv binary -- do NOT use `source activate`.
+#   `source` only works in interactive shells; cron runs /bin/sh with no profile.
+#   Find the path on VPS while venv is active:  which python
 
-REPO=/path/to/monitoruloficial
-PYTHON=/path/to/venv/bin/python
+MO_REPO=/home/pax/g2-dev/monitoruloficial
+MO_PYTHON=/home/pax/g2-dev/monitorulpreturilor/venv/bin/python
 
-# ── Twice-daily pipeline: index + ephemeral PDFs (Parts III–VII) ─────────────
-# Runs at 10:00 and 22:00, Mon–Fri (gazette is only published on weekdays).
-# main.py orchestrates: get_index.py → fetch_p3+.py
-# Scripts log to $REPO/data/logs/mof.log; redirect cron stdout to /dev/null.
+# Twice-daily pipeline: index + ephemeral PDFs (Parts III-VII)
+# Runs at 10:00 and 22:00, Mon-Fri (gazette is only published on weekdays).
+# main.py orchestrates: get_index.py -> fetch_p3+.py
+# Scripts log to $MO_REPO/data/logs/mof.log; cron stdout goes to /dev/null.
 
-0 10,22 * * 1-5  $PYTHON $REPO/main.py >> /dev/null 2>&1
+0 10,22 * * 1-5  $MO_PYTHON $MO_REPO/main.py >> /dev/null 2>&1
 
-# ── Persistent PDFs (Parts I, II, PIM, V) ────────────────────────────────────
+# Persistent PDFs (Parts I, II, PIM, V)
 # Run once daily; only downloads what's missing (idempotent).
 # On first run after VPS setup, add -start 2011-01-01 to skip empty pre-2011 rows.
 
-30 10    * * 1-5  $PYTHON $REPO/fetch_pdfs.py >> /dev/null 2>&1
+30 10   * * 1-5  $MO_PYTHON $MO_REPO/fetch_pdfs.py >> /dev/null 2>&1
 
-# ── Merge per-page PDFs into single documents ─────────────────────────────────
+# Merge per-page PDFs into single documents
 # Run after fetch_p3+.py has finished (offset by ~15 min to be safe).
 
-15 10,22 * * 1-5  $PYTHON $REPO/concat_pages.py >> /dev/null 2>&1
+15 10,22 * * 1-5  $MO_PYTHON $MO_REPO/concat_pages.py >> /dev/null 2>&1
 
-# ── Optional: convert PDFs → Markdown ────────────────────────────────────────
+# Optional: convert PDFs -> Markdown
 # CPU-intensive; run once daily at a quiet time.
 # Remove or comment out if text extraction isn't needed yet.
 
-0 23     * * 1-5  $PYTHON $REPO/convert.py >> /dev/null 2>&1
+0 23    * * 1-5  $MO_PYTHON $MO_REPO/convert.py >> /dev/null 2>&1
 
-# ── Notes ─────────────────────────────────────────────────────────────────────
-# Monitor runs:     python $REPO/stats.py
-# Tail logs:        tail -f $REPO/data/logs/mof.log
-# Check cron mail:  sudo journalctl -u cron (systemd) or /var/mail/$USER
+# Notes:
+#   Monitor runs:   $MO_PYTHON $MO_REPO/stats.py
+#   Tail logs:      tail -f $MO_REPO/data/logs/mof.log
+#   Check cron:     sudo journalctl -u cron   (systemd)
+#                   /var/mail/$USER            (legacy)

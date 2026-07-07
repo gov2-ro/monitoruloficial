@@ -2,6 +2,13 @@
 
 ## Observability / monitoring
 
+### 2026-07-07 — fetch_p3+.py: close out abort-path run records, add request counter
+
+- Found that `fetch_p3+.py`'s consecutive-failure abort (`raise SystemExit(1)` at 5 call sites) never called `log_run_end`, so its own `runs` row was left dangling (`status=NULL`, shown as `?` in `stats.py`). Only `main.py`'s wrapping row correctly showed `status='error'`. Also, the console-only `Stopping: N consecutive failures` message used `tqdm.write()`, which bypasses `logging` entirely — under cron (stdout redirected to `/dev/null` per `crontab.example`), that message was lost from `mof.log` completely.
+- Fixed: added a `_abort()` helper that logs the stop reason via `logging.error` (reaches the file) and calls `log_run_end(conn, run_id, 'error', {...})` before `raise SystemExit(1)`, replacing all 5 duplicated abort blocks. `fetch_pdfs.py` already did this correctly — `fetch_p3+.py` was the one-off gap.
+- Added a `requests_made` counter (incremented before each of the 4 outbound `session.get`/`.post` calls), included in the stats blob on every run (success, partial, and abort) so future `runs` rows carry real request-volume data.
+- Context: user is considering smaller cron batches so runs don't reach the 2-consecutive-failure trip. Checked existing history (~2 weeks since observability shipped) — only 2 failure incidents on record, with different signatures (HTTP 500 after ~30min in `fetch_p3+.py`; SSL EOF/RemoteDisconnected after ~7 docs in `fetch_pdfs.py`, likely from two overlapping manual test runs) and no request counts logged. Not enough data to derive a safe request-count threshold yet — the counter above is meant to build that evidence over the next few weeks of cron cycles rather than guessing a number now.
+
 ### 2026-06-26 — Logging, run tracking, stats dashboard
 
 - Added `LOG_DIR` / `LOG_PATH` constants to `utils/common.py`; upgraded `setup_logging()` to use `RotatingFileHandler` (5 MB, 10 backups) when a log file is requested. All scripts now call `setup_logging(logfile=LOG_PATH)` so every cron invocation writes timestamped entries to `data/logs/mof.log`.

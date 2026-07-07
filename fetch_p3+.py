@@ -25,6 +25,22 @@ def be_polite(bounds=PACE):
     time.sleep(random.uniform(*bounds))
 
 
+def _abort(conn, run_id, consecutive_failures, all_files, files_found, errors, requests_made):
+    """Close out the dangling run record before aborting on too many consecutive failures.
+
+    Without this, the run's row in the `runs` table is left with status=NULL
+    (shown as '?' in stats.py) instead of a clear 'error'.
+    """
+    logging.error(f'Stopping: {consecutive_failures} consecutive failures after {requests_made} requests')
+    log_run_end(conn, run_id, 'error', {
+        'pages_saved': all_files, 'skipped': files_found, 'errors': errors,
+        'requests_made': requests_made,
+        'aborted_reason': f'{consecutive_failures} consecutive failures',
+    })
+    conn.close()
+    raise SystemExit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Download ephemeral Parts III–VII PDFs')
     parser.add_argument('-start', '--start_date', help='start date YYYY-MM-DD')
@@ -80,6 +96,7 @@ def main():
     files_found = 0
     errors = 0
     consecutive_failures = 0
+    requests_made = 0
 
     session = make_session()
 
@@ -141,6 +158,7 @@ def main():
 
                 # ── Request 1: GET part page to extract fid ──────────────────
                 be_polite()
+                requests_made += 1
                 try:
                     response = session.get(URL_BASE + url, headers=base_headers('headers2'),
                                            verify=False, timeout=timeout)
@@ -149,9 +167,7 @@ def main():
                     errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
-                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
-                        conn.close()
-                        raise SystemExit(1)
+                        _abort(conn, run_id, consecutive_failures, all_files, files_found, errors, requests_made)
                     continue
 
                 if response.status_code != 200:
@@ -159,9 +175,7 @@ def main():
                     errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
-                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
-                        conn.close()
-                        raise SystemExit(1)
+                        _abort(conn, run_id, consecutive_failures, all_files, files_found, errors, requests_made)
                     continue
 
                 consecutive_failures = 0
@@ -187,6 +201,7 @@ def main():
                 # ── Request 2: POST gidf.php for page count ──────────────────
                 data = {'fid': fid_value, 'rand': random.random()}
                 be_polite()
+                requests_made += 1
                 try:
                     response = session.post(URL_GIDF, headers=base_headers('headers1'),
                                             data=data, verify=False, timeout=timeout)
@@ -195,9 +210,7 @@ def main():
                     errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
-                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
-                        conn.close()
-                        raise SystemExit(1)
+                        _abort(conn, run_id, consecutive_failures, all_files, files_found, errors, requests_made)
                     continue
 
                 if response.status_code != 200:
@@ -205,9 +218,7 @@ def main():
                     errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
-                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
-                        conn.close()
-                        raise SystemExit(1)
+                        _abort(conn, run_id, consecutive_failures, all_files, files_found, errors, requests_made)
                     continue
 
                 try:
@@ -221,9 +232,7 @@ def main():
                     errors += 1
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
-                        tqdm.write(f'Stopping: {consecutive_failures} consecutive failures')
-                        conn.close()
-                        raise SystemExit(1)
+                        _abort(conn, run_id, consecutive_failures, all_files, files_found, errors, requests_made)
                     continue
 
                 consecutive_failures = 0
@@ -236,6 +245,7 @@ def main():
                     f"&subfolder={gidf_json['f']}&page=10"
                 )
                 be_polite()
+                requests_made += 1
                 try:
                     response = session.get(ziurl_jsonp, headers=base_headers('headers2'),
                                            verify=False, timeout=timeout)
@@ -270,6 +280,7 @@ def main():
                         continue
 
                     be_polite(PACE_PAGE)
+                    requests_made += 1
                     try:
                         response = session.get(ziurl, headers=base_headers('headers2'),
                                                verify=False, timeout=timeout)
@@ -313,9 +324,13 @@ def main():
     status = 'ok' if errors == 0 else 'partial'
     log_run_end(conn, run_id, status, {
         'days': len(rows), 'pages_saved': all_files, 'skipped': files_found, 'errors': errors,
+        'requests_made': requests_made,
     })
     conn.close()
-    logging.info(f'Done: {len(rows)} days, {all_files} pages saved, {files_found} skipped, {errors} errors')
+    logging.info(
+        f'Done: {len(rows)} days, {all_files} pages saved, {files_found} skipped, '
+        f'{errors} errors, {requests_made} requests'
+    )
     if sys.platform == 'darwin':
         os.system(f'say -v ioana "în sfârșit, am gătat {all_files} fișiere " -r 250')
 

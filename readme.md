@@ -66,7 +66,8 @@ Two tiers: build a per-day index of available parts, then download the PDFs for 
   plus a jsonp into the `data/pdfs/_p3+/tmp/<date>/<filename>/` staging tree. Page PDFs are **not
   yet concatenated** (see roadmap). Anti-ban: paces every request with random sleeps, retries at
   most once (retry bursts keep the server's IP ban hot), and aborts after 2 consecutive network
-  failures.
+  failures — the abort path logs an `error` run record (via `_abort()`), including a
+  `requests_made` counter, so the run doesn't show up as a dangling `?` in `stats.py`.
 - **`mof-convert-txt.py`** — standalone PyPDF2 experiment that converts sample PDFs to markdown.
 
 `shy_parts` is the contract between the two PDF scrapers: `fetch_pdfs.py` skips those parts,
